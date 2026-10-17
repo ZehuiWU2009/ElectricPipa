@@ -63,6 +63,10 @@ final class PipaString {
 
     private(set) var isRinging: Bool = false
 
+    /// 实时安全的伪随机噪声源（xorshift32）：不分配内存、不加锁，用来生成拨弦激励。
+    /// 每个弦独立持有一份状态，确定性可复现，适合在音频实时线程上调用。
+    private var noiseState: UInt32 = 0x12345678
+
     init(sampleRate: Double, frequency: Double) {
         self.sampleRate = sampleRate
         self.frequency = frequency
@@ -197,6 +201,17 @@ final class PipaString {
 
     // MARK: - 演奏
 
+    /// 实时安全的伪随机噪声：xorshift32，返回 [-1, 1]。不分配内存、不加锁。
+    private func nextNoise() -> Float {
+        var x = noiseState
+        x ^= x << 13
+        x ^= x >> 17
+        x ^= x << 5
+        if x == 0 { x = 0x9E3779B9 }   // 防止退化到全零状态
+        noiseState = x
+        return Float(Int32(bitPattern: x)) / Float(Int32.max)
+    }
+
     /// 拨弦。
     ///
     /// 物理上，拨弦是给弦一个初始位移：拨点的位置决定了哪些谐波被抵消，
@@ -211,10 +226,10 @@ final class PipaString {
         let gain = Float(min(max(amplitude, 0.0), 1.0))
         let pos = min(max(position, 0.06), 0.94)
 
-        // 激励直接在延迟线里生成，全程不分配内存。
-        // 实时音频回调里分配内存可能触发内核锁，造成爆音，必须避免。
+        // 激励直接在延迟线里生成，全程不分配内存、不调用随机源运行时。
+        // 实时音频回调里分配内存或调用带锁的随机源会触发内核锁，造成爆音甚至崩溃，必须避免。
         for i in 0..<length {
-            buffer[i] = Float.random(in: -1...1)
+            buffer[i] = nextNoise()
         }
 
         // 拨点的梳状滤波：拨点处的谐波节点会被抵消，这是拨弦位置改变音色的原因。
