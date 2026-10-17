@@ -1,0 +1,278 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+		DAD2E93954294FBE9DBC2B71 /* PipaTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6D4FE87D8CD4C6C9921ACD8 /* PipaTuning.swift */; };
+		5BDD15DD49EF4A96A2B5BD10 /* PipaString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64B5682BBFA94D2EA1CD21C2 /* PipaString.swift */; };
+		F4A9B4AC6B4645308CF32008 /* PipaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520D5ED709B5433F90CA53F1 /* PipaBody.swift */; };
+		778C7079D9044D2EB93E57E2 /* WavFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD51FCCE049476E8605035F /* WavFile.swift */; };
+		528517908AA6459DA1A2425E /* PipaSynth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 811357FBFB8345028163B715 /* PipaSynth.swift */; };
+		84BA12A0BBCC48D1A4B535C4 /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C2985BC30041969828185C /* AudioEngine.swift */; };
+		C2440850858041CEB7052C83 /* ElectricPipaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03EDC09128B345BAA0850B7E /* ElectricPipaApp.swift */; };
+		A74AB7EE37EB4FDDA52466AC /* PipaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7892EBFB8AE2443E850BC230 /* PipaView.swift */; };
+		90DB97F889D94FD4934628A1 /* FretboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9A9329E73945E8B2FFD698 /* FretboardView.swift */; };
+		F6D4FE87D8CD4C6C9921ACD8 /* PipaTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaTuning.swift; sourceTree = "<group>"; };
+		64B5682BBFA94D2EA1CD21C2 /* PipaString.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaString.swift; sourceTree = "<group>"; };
+		520D5ED709B5433F90CA53F1 /* PipaBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaBody.swift; sourceTree = "<group>"; };
+		0BD51FCCE049476E8605035F /* WavFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WavFile.swift; sourceTree = "<group>"; };
+		811357FBFB8345028163B715 /* PipaSynth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaSynth.swift; sourceTree = "<group>"; };
+		D4C2985BC30041969828185C /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
+		03EDC09128B345BAA0850B7E /* ElectricPipaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElectricPipaApp.swift; sourceTree = "<group>"; };
+		7892EBFB8AE2443E850BC230 /* PipaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaView.swift; sourceTree = "<group>"; };
+		DA9A9329E73945E8B2FFD698 /* FretboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FretboardView.swift; sourceTree = "<group>"; };
+		DB164EA7642945D693A8CDC4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		E5EBC9F1DF7046AA9CBC7C6E /* ElectricPipa.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ElectricPipa.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8C737D15AAD24D999D889E85 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		024465992C62494B898B0F5F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AC461F04DB5C46C09A4C15A0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DAD2E93954294FBE9DBC2B71 /* PipaTuning.swift in Sources */,
+				5BDD15DD49EF4A96A2B5BD10 /* PipaString.swift in Sources */,
+				F4A9B4AC6B4645308CF32008 /* PipaBody.swift in Sources */,
+				778C7079D9044D2EB93E57E2 /* WavFile.swift in Sources */,
+				528517908AA6459DA1A2425E /* PipaSynth.swift in Sources */,
+				84BA12A0BBCC48D1A4B535C4 /* AudioEngine.swift in Sources */,
+				C2440850858041CEB7052C83 /* ElectricPipaApp.swift in Sources */,
+				A74AB7EE37EB4FDDA52466AC /* PipaView.swift in Sources */,
+				90DB97F889D94FD4934628A1 /* FretboardView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C29F2EB9BAA44785A3E1C387 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				F6D4FE87D8CD4C6C9921ACD8,
+				64B5682BBFA94D2EA1CD21C2,
+				520D5ED709B5433F90CA53F1,
+				0BD51FCCE049476E8605035F,
+				811357FBFB8345028163B715,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		D7BB841034414308AA0DB84C /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				D4C2985BC30041969828185C,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		6BECF4A7901F4FB4AD548D46 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				03EDC09128B345BAA0850B7E,
+				7892EBFB8AE2443E850BC230,
+				DA9A9329E73945E8B2FFD698,
+				DB164EA7642945D693A8CDC4,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		C32303EDC42344DABD8AFD8B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E5EBC9F1DF7046AA9CBC7C6E,
+			);
+			sourceTree = "<group>";
+		};
+		82DA8B6F4A7746299F291A05 /* ElectricPipa */ = {
+			isa = PBXGroup;
+			children = (
+				C29F2EB9BAA44785A3E1C387,
+				D7BB841034414308AA0DB84C,
+				6BECF4A7901F4FB4AD548D46,
+			);
+			sourceTree = "<group>";
+		};
+		AA84DCD5F87346689C53ADE3 /* ElectricPipa */ = {
+			isa = PBXGroup;
+			children = (
+				82DA8B6F4A7746299F291A05,
+				C32303EDC42344DABD8AFD8B,
+			);
+			sourceTree = "<group>";
+		};
+		3AE2EBB55B8E43599948A295 /* ElectricPipa */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4E6C6A103DCD498490526AFA /* Build configuration list for PBXNativeTarget "ElectricPipa" */;
+			buildPhases = (
+				AC461F04DB5C46C09A4C15A0 /* Sources */,
+				8C737D15AAD24D999D889E85 /* Frameworks */,
+				024465992C62494B898B0F5F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ElectricPipa;
+			productName = ElectricPipa;
+			productReference = E5EBC9F1DF7046AA9CBC7C6E /* ElectricPipa.app */;
+			productType = "com.apple.product-type.application";
+		};
+		330FE6ED462C4BA7A61F4482 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					3AE2EBB55B8E43599948A295 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = 39591F4599F94CCFBE27907C /* Build configuration list for PBXProject "ElectricPipa" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				 en,
+				 zh-Hans,
+			);
+			mainGroup = AA84DCD5F87346689C53ADE3;
+			productRefGroup = C32303EDC42344DABD8AFD8B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3AE2EBB55B8E43599948A295 /* ElectricPipa */,
+			);
+		};
+		AF2AB461D74B4965848870B6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf$(EFFECTIVE_PLATFORM_NAME)";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D486A6E4DA6F402A9A15D2CF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf$(EFFECTIVE_PLATFORM_NAME)";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A12B38E1DA9D41B78E0CC3DF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_BITCODE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.electricpipa;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_COMPILATION_MODE = singlefile;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Debug;
+		};
+		982A266E113541188652389D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_BITCODE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.electricpipa;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Release;
+		};
+		39591F4599F94CCFBE27907C /* Build configuration list for PBXProject "ElectricPipa" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AF2AB461D74B4965848870B6 /* Debug */,
+				D486A6E4DA6F402A9A15D2CF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4E6C6A103DCD498490526AFA /* Build configuration list for PBXNativeTarget "ElectricPipa" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A12B38E1DA9D41B78E0CC3DF /* Debug */,
+				982A266E113541188652389D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+	};
+	rootObject = 330FE6ED462C4BA7A61F4482 /* Project object */;
+}
