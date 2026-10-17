@@ -80,6 +80,21 @@ The four strings are separate digital waveguides. They are mixed and then fed th
 - The offline renderer (`Renderer/main.swift`) verifies tuning across the whole range: open strings within ±0.2 cents, all 128 positions within 0.00 cents by the analytic method, and the high register within ±0.5 cents under autocorrelation. All far inside the roughly ±5 cents a human ear can resolve.
 - `PipaAudio/` carries seven 24-bit WAV pieces written by the renderer: open strings, a pentatonic scale, tremolo, strum, a push-pull slide, a short phrase, and the synthesised body impulse response.
 
+## Field Context · From 1983 to Differentiable Physical Modelling
+
+**The 1983 algorithm is the starting point, not the ceiling.** A textbook Karplus-Strong loop is one line of code. Everything layered on top of it in this project, the frequency-scaled loop low-pass, the all-pass fractional delay, the body filter bank and commuted synthesis, comes from extensions published in the decades after 1983, and together they form the standard modern shape of the algorithm. What is genuinely new in the 2020s is not the equations but the way the parameters are obtained.
+
+**Differentiable physical modelling keeps the equations and changes the fitting method.** Re-implement the same physical model inside an autodiff framework and the whole chain can be fitted end-to-end by gradient descent:
+
+- Engel, J. H., Hantrakul, L., Gu, L., & Roberts, A. (2020). *DDSP: Differentiable Digital Signal Processing.* ICLR 2020. Established differentiable DSP as a composable building block, including a differentiable Karplus-Strong loop in its teaching material.
+- Tablas de Paula, P., Südholt, D., & Reiss, J. D. (2025). *Differentiable Karplus-Strong.* DMRN+20 Workshop, King's College London, Centre for Digital Music, Queen Mary University of London. A fully differentiable, time-domain extended KSA optimised end to end; gradient descent beat a genetic algorithm on an acoustic guitar dataset. The two future directions the paper names, body resonances from parallel filters and inharmonicity from an all-pass in the string loop, are both already implemented in this project.
+- Diaz, R., et al. (2025). *Fast Differentiable Modal Simulation of Non-linear Strings, Membranes, and Plates.* arXiv:2505.05940. A differentiable GPU framework in JAX for nonlinear modal synthesis; it recovers tension, stiffness and geometry from recordings and runs about twice real-time at 100 modes.
+- Zheleznov, V., Bilbao, S., Wright, A., & King, S. (2025). *Learning Nonlinear Dynamics in Physical Modelling Synthesis using Neural Ordinary Differential Equations.* Proceedings of DAFx25, Ancona. A hybrid model: the linear modal part stays analytic and exact, and a small network learns only the nonlinear coupling that produces pitch glides and amplitude-dependent brightness.
+
+**Why this project keeps a physical core instead of training a neural waveform model.** A WaveNet-class model can match a timbre, but it is a black box: large, latency-heavy, and silent on why a Pipa sounds like a Pipa. A differentiable physical model stays interpretable. Every parameter remains a physical quantity that can be read off and written back into the Swift kernel, and the whole thing still runs in real time on an iPhone.
+
+**Planned v2.0 direction.** Upgrade parameter identification from manual estimation to differentiable fitting: port the same Karplus-Strong core to PyTorch or JAX, fit the excitation spectrum, the per-string loop parameters and the body resonances by gradient descent against recordings of this instrument, and write the resulting parameter table back into `PipaString` and `PipaBody`. The optional next layer is a small network for the tension-modulation nonlinearity, the effect that makes the pitch glide under a hard pluck and that currently separates a real Pipa from this synthesiser.
+
 ## System Architecture
 
 The signal path is short and every stage is on device. The main thread only forwards intent; all sound is computed on the audio render thread.
@@ -213,10 +228,15 @@ Each round below was driven by something the previous round could not do. The fi
 - All code comments moved to English, with the two crash-level findings from contribution 4 written up in the code
 - README rebuilt as English first with the full Chinese edition following, both covering the same sections
 
+### v1.5 · Field context and the differentiable roadmap (2026-10-17)
+
+- Added a field-context section to the README: where the 1983 core sits in the field, the 2020-2025 differentiable physical modelling line of work, and why the core stays physical instead of becoming a neural waveform model
+- Upgraded the planned parameter identification from manual estimation to differentiable fitting, with the 2025 literature that motivates it
+
 ## Known Limitations / To Be Improved
 
-- The five body resonances are hand-set estimates, not measurements. The planned next step is parameter identification: record the four open strings at three velocities on a real Pipa, measure the per-string 60 dB tail, the slope of the excitation spectrum and the body transfer function from the recordings, and write the results back into `PipaString` and `PipaBody`
-- The excitation is white noise shaped by a comb filter, which is where the remaining guitar-like colour comes from. A real nail pluck has a spectrum that falls with frequency, and that slope is one of the parameters the identification step will supply
+- The five body resonances are hand-set estimates, not measurements. The planned next step is differentiable parameter identification: port the same Karplus-Strong core to PyTorch or JAX and fit the per-string 60 dB tail, the slope of the excitation spectrum and the body transfer function by gradient descent from recordings of the four open strings at three velocities, then write the results back into `PipaString` and `PipaBody`
+- The excitation is white noise shaped by a comb filter, which is where the remaining guitar-like colour comes from. A real nail pluck has a spectrum that falls with frequency, and that slope is one of the parameters the differentiable fitting will supply
 - The Bundle Identifier is still a placeholder
 - The brightness slider moves all four strings together; per-string brightness is already in the engine and only needs surfacing in the UI
 - Audio on the simulator works, but a real device is the better reference for how the tone sits
@@ -301,6 +321,21 @@ Source code of a personal project; discussion and learning welcome.
 - 音高以 Hz 定义,任何采样率下同一个音都准;滑音只重算延迟不动环路增益,音高过渡时音色不跳变。
 - 离线渲染器（`Renderer/main.swift`）做全音域校验:四空弦 ±0.2 音分、128 个音位解析法 0.00 音分、高音区自相关 ±0.5 音分,全部远在人耳可辨的约 ±5 音分之内。
 - `PipaAudio/` 收录渲染器写出的 7 段 24-bit WAV:空弦、五声音阶、轮指、扫弦、推拉弦滑音、一段乐句、合成琴体脉冲响应。
+
+## 领域坐标 · 从 1983 到可微分物理建模
+
+**1983 年的算法是起点,不是天花板。** 教科书版 Karplus-Strong 环路只有一行代码。本项目叠加在它之上的一切,随基频缩放的环路低通、全通分数延迟、琴体滤波器组、Commuted Synthesis,都来自 1983 年之后几十年间的扩展,合起来就是这个算法的标准现代形态。2020 年代真正的新东西不在方程,而在参数的获取方式。
+
+**可微分物理建模保留方程,改变拟合方法。** 把同一套物理模型搬进自动微分框架,整条链就能用梯度下降端到端拟合:
+
+- Engel, J. H., Hantrakul, L., Gu, L., & Roberts, A. (2020). *DDSP: Differentiable Digital Signal Processing.* ICLR 2020。把可微分 DSP 确立为可组合的基础件,其教学材料里就包含一个可微分的 Karplus-Strong 环路。
+- Tablas de Paula, P., Südholt, D., & Reiss, J. D. (2025). *Differentiable Karplus-Strong.* DMRN+20 研讨会,伦敦国王学院,伦敦玛丽女王大学数字音乐中心。完全可微分的时域扩展 KSA,端到端优化,在吉他数据集上梯度下降优于遗传算法。论文点出的两个未来方向,琴体用并行滤波器、非谐性用弦环路里的全通,本项目都已经实现。
+- Diaz, R., et al. (2025). *Fast Differentiable Modal Simulation of Non-linear Strings, Membranes, and Plates.* arXiv:2505.05940。JAX 写的可微分 GPU 模态合成框架,能从录音反演张力、刚度与几何参数,100 个模态下约为两倍实时。
+- Zheleznov, V., Bilbao, S., Wright, A., & King, S. (2025). *Learning Nonlinear Dynamics in Physical Modelling Synthesis using Neural Ordinary Differential Equations.* DAFx25 会议论文集,安科纳。混合模型:线性模态部分保持解析精确,只让一个小网络学非线性耦合,而滑音与亮度随力度变化正来自这部分耦合。
+
+**为什么本项目保留物理内核,而不是训一个神经波形模型。** WaveNet 一类模型能拟合音色,但它是黑箱:模型大、延迟高,而且回答不了「为什么琵琶像琵琶」。可微分物理模型保持可解释,每个参数都是一个可以读出来、写回 Swift 内核的物理量,整套东西还能在 iPhone 上实时跑。
+
+**v2.0 计划方向。** 把参数辨识从手工估计升级为可微分拟合:把同一套 Karplus-Strong 内核移植到 PyTorch 或 JAX,用梯度下降对本乐器的录音端到端拟合激励谱、每弦环路参数与琴体共振峰,把得到的参数表写回 `PipaString` 与 `PipaBody`。可选的下一个层是用一个小网络学张力调制非线性,强拨时音高滑动正来自这个效应,它也是当前合成声与真实琵琶之间最大的差距。
 
 ## 系统架构
 
@@ -435,10 +470,15 @@ xcrun swiftc -swift-version 6 -o PipaRenderer \
 - 全部代码注释改为英文,贡献 4 的两个崩溃级发现写进代码注释
 - README 重构为英文完整版在前、中文完整版在后,两版覆盖相同章节
 
+### v1.5 · 领域坐标与可微分路线（2026-10-17）
+
+- README 增加领域坐标一节:1983 年内核在领域中的位置、2020-2025 可微分物理建模这条线、以及为什么内核保持物理而不是换成神经波形模型
+- 参数辨识计划从手工估计升级为可微分拟合,并补上支撑这一升级的 2025 年文献
+
 ## 已知限制 / 待改进
 
-- 五个琴体共振峰是手拍估值,不是实测。既定下一步是参数辨识:在真实琵琶上录四根空弦 × 三档力度,从录音测每弦 60 dB 余音、激励谱下降斜率、琴体传递函数,写回 `PipaString` 与 `PipaBody`
-- 激励是白噪加梳状滤波,剩下的「吉他味」主要来自这里。真实义甲拨弦的频谱随频率下降,这条斜率正是辨识要测的参数之一
+- 五个琴体共振峰是手拍估值,不是实测。既定下一步是可微分参数辨识:把同一套 Karplus-Strong 内核移植到 PyTorch 或 JAX,用梯度下降从四根空弦 × 三档力度的录音中拟合每弦 60 dB 余音、激励谱下降斜率与琴体传递函数,结果写回 `PipaString` 与 `PipaBody`
+- 激励是白噪加梳状滤波,剩下的「吉他味」主要来自这里。真实义甲拨弦的频谱随频率下降,这条斜率正是可微分拟合要测的参数之一
 - Bundle Identifier 仍是占位值
 - 明暗滑块统一移动四根弦;分弦亮度引擎里已经有,只需在界面上暴露
 - 模拟器上音频可用,但音色落位以真机为更可靠的参考
