@@ -7,7 +7,7 @@
 
 # Electric Pipa
 
-A physical-modelling synthesiser for the Pipa that runs on iPhone and iPad. Every sound is computed in real time on the device with digital waveguide algorithms. Nothing is played back from samples: the instrument is rebuilt in code, string by string, body and all.
+A physical-modelling synthesiser for the Pipa that runs on iPhone and iPad. Every sound is computed in real time on the device with digital waveguide algorithms. Nothing is played back from samples: the instrument is rebuilt in code, string by string, body and all. The core starts from the 1983 Karplus-Strong algorithm in its modern extended form, and the direction of travel is the 2020s differentiable physical modelling paradigm: the same equations, fitted against recordings of a real instrument by gradient descent.
 
 > Personal project · grown out of my own Pipa practice, still evolving
 >
@@ -249,7 +249,7 @@ Source code of a personal project; discussion and learning welcome.
 
 # 电子琵琶 · Electric Pipa
 
-一款可在 iPhone / iPad 上弹奏的**物理建模合成**电子琵琶。所有声音都在手机本地、实时用数字波导算法算出来——不是在播放采样，是把琵琶这件乐器用代码重新造了一遍，一根弦一根弦地造，连琴体一起。
+一款可在 iPhone / iPad 上弹奏的**物理建模合成**电子琵琶。所有声音都在手机本地、实时用数字波导算法算出来——不是在播放采样,是把琵琶这件乐器用代码重新造了一遍,一根弦一根弦地造,连琴体一起。内核起点是 1983 年的 Karplus-Strong 算法及其后的标准扩展形态,演进方向是 2020 年代的可微分物理建模:方程不变,用梯度下降对真实乐器的录音端到端拟合参数。
 
 > 个人项目 · 源于自己的习琴需要,在长期练习中持续打磨
 >
