@@ -1,70 +1,94 @@
 import Foundation
 
-/// 一根 Pipa 弦：数字波导实现的 Karplus-Strong 拨弦模型。
+/// One string of the Pipa: a digital waveguide running the Karplus-Strong
+/// plucked-string model.
 ///
-/// 延迟线长度恰好等于基频的一个周期，拨弦时把整条延迟线填入经过塑形的噪声，
-/// 这相当于给定弦的初始位移。每个样本读出末端、过环路低通、乘环路增益后写回原处，
-/// 高频衰减得比低频快，噪声于是逐渐变成乐音。
+/// The delay line is exactly one fundamental period long. Plucking fills the
+/// whole line with shaped noise, which stands in for the initial displacement of
+/// the string. Each sample reads out of the far end, passes through the loop
+/// low-pass, is scaled by the loop gain and is written back where it came from.
+/// High frequencies lose more energy on every round trip than low ones, so the
+/// noise gradually settles into a pitched tone.
 ///
-/// 这一路修掉了三个都会让高音「有波形、没音高」的坑，值得记下来：
+/// Three fixes keep the high positions from ending up "a waveform with no
+/// pitch", and they are worth recording here:
 ///
-/// 1. 环路里的任何衰减都是按「每绕一圈」计的，而每秒绕的圈数就等于基频。
-///    同样比例在 220 Hz 上无伤大雅，在 2349 Hz 上每秒复利两千多次，基频瞬间归零。
-///    所以环路低通的响应必须随基频缩放，而不是固定在某个绝对截止频率上。
+/// 1. Every loss in the loop is charged per round trip, and the number of round
+///    trips per second is the fundamental frequency itself. A ratio that is
+///    harmless at 220 Hz compounds more than two thousand times a second at
+///    2349 Hz and wipes the fundamental out instantly. The loop low-pass
+///    response therefore has to scale with the fundamental instead of sitting at
+///    a fixed absolute cutoff.
 ///
-/// 2. 分数延迟用线性插值会引入一个低通，它在基频处的衰减同样逃不过上面的复利。
-///    改用一阶全通，幅度恒等于 1，只贡献相位延迟，不带来任何能量损失。
+/// 2. Fractional delay built from linear interpolation acts as a low-pass of its
+///    own, and its loss at the fundamental compounds in exactly the same way.
+///    A first-order all-pass replaces it: its magnitude is identically 1, so it
+///    contributes phase delay only and takes no energy away.
 ///
-/// 3. 环路低通在直流处的增益恰好是 1，直流衰减得比基频慢几十倍，
-///    只要激励的均值不为零，余音里最后只剩一团低频哼声。所以激励必须严格零均值。
+/// 3. The loop low-pass has unity gain at DC, where the decay runs tens of times
+///    slower than at the fundamental. Any non-zero mean in the excitation
+///    therefore survives as a low-frequency hum in the tail, so the excitation
+///    is held to a strict zero mean.
 final class PipaString {
 
     let sampleRate: Double
 
-    /// 当前基频。改变它会平滑地改变音高，推拉弦的滑音靠这个实现。
-    /// 推拉弦时只重算延迟，不动音色，避免滑音过程中音色跳变。
+    /// Current fundamental frequency. Changing it moves the pitch smoothly, and
+    /// push and pull bends rely on this.
+    /// Bending only recomputes the delay and leaves the timbre alone, so the
+    /// tone does not jump while the pitch glides.
     var frequency: Double {
         didSet { updateDelay() }
     }
 
-    /// 延迟线的存储区，容量按最低可能基频预留，实际生效长度由 length 决定。
+    /// Delay-line storage. Capacity is reserved for the lowest possible
+    /// fundamental; the live length is what `length` says.
     private var buffer: [Float] = [Float](repeating: 0, count: 4096)
     private let capacity = 4096
 
-    /// 生效的延迟线长度，也就是延迟线本身贡献的样本延迟。
+    /// Live length of the delay line, i.e. the integer sample delay the line
+    /// itself contributes.
     private var length: Int = 2
 
-    /// 当前读写头位置。读出与写回发生在同一格，环绕一圈即为 length 个样本。
+    /// Current read/write head. Reading and writing happen in the same cell, and
+    /// one lap around the buffer is `length` samples.
     private var index: Int = 0
 
-    /// 一阶全通的系数与两级状态，负责分数延迟那一部分。
+    /// First-order all-pass coefficient and its two state cells, responsible for
+    /// the fractional part of the delay.
     private var allpassCoeff: Float = 0
     private var allpassXPrev: Float = 0
     private var allpassYPrev: Float = 0
 
-    /// 环路中与延迟线无关的那部分延迟：低通相位延迟加上全通相位延迟。
+    /// Delay inside the loop that does not come from the delay line itself:
+    /// low-pass phase delay plus all-pass phase delay.
     private var extraDelaySamples: Double = 0
 
     private var loopState: Float = 0
 
-    /// 一阶低通系数，越大越暗。y[n] = (1-a)·x[n] + a·y[n-1] 里的 a。
+    /// First-order low-pass coefficient; larger is darker.
+    /// This is the `a` in y[n] = (1-a)*x[n] + a*y[n-1].
     private var loopCoeff: Float = 0.5
 
-    /// 每绕行一圈保留的能量比例，决定余音长度。
+    /// Fraction of energy kept on every round trip, which sets the tail length.
     private var damping: Float = 0.996
 
-    /// 记录的明亮程度与期望余音，音色或音高变化后用来重算。
+    /// Remembered brightness and requested decay, used to recompute whenever the
+    /// timbre or the pitch changes.
     private var brightness: Double = 0.6
     private var requestedDecay: Double = 2.0
 
 
-    /// 泄漏积分器估计的能量，用来判断余音是否散尽。
+    /// Leaky integrator estimate of the energy, used to decide whether the tail
+    /// has died away.
     private var energy: Float = 0
 
     private(set) var isRinging: Bool = false
 
-    /// 实时安全的伪随机噪声源（xorshift32）：不分配内存、不加锁，用来生成拨弦激励。
-    /// 每个弦独立持有一份状态，确定性可复现，适合在音频实时线程上调用。
+    /// Real-time safe pseudo-random noise source (xorshift32): no allocation, no
+    /// locking, used to generate the pluck excitation. Each string holds its own
+    /// state, the sequence is deterministic and reproducible, and it is safe to
+    /// call from the audio real-time thread.
     private var noiseState: UInt32 = 0x12345678
 
     init(sampleRate: Double, frequency: Double) {
@@ -73,33 +97,36 @@ final class PipaString {
         updateDelay()
     }
 
-    // MARK: - 调音
+    // MARK: - Tuning
 
     private var omega: Double {
         2.0 * Double.pi * max(frequency, 20.0) / sampleRate
     }
 
-    /// 环路一阶低通在角频率 w 上的幅度响应。
+    /// Magnitude response of the loop low-pass at angular frequency w.
     private static func loopMagnitude(coeff s: Double, at w: Double) -> Double {
         let real = 1.0 - s * cos(w)
         let imag = s * sin(w)
         return (1.0 - s) / max(sqrt(real * real + imag * imag), 1e-12)
     }
 
-    /// 一阶低通在角频率 w 上的相位延迟。
+    /// Phase delay of the first-order low-pass at angular frequency w.
     private static func loopPhaseDelay(coeff s: Double, at w: Double) -> Double {
         atan2(s * sin(w), 1.0 - s * cos(w)) / w
     }
 
-    /// 一阶全通 (a + z⁻¹)/(1 + a·z⁻¹) 在角频率 w 上的相位延迟。
-    /// 它的幅度恒等于 1，这正是它能替代线性插值做分数延迟的原因。
+    /// Phase delay of the first-order all-pass (a + z^-1)/(1 + a*z^-1) at angular
+    /// frequency w. Its magnitude is identically 1, which is exactly why it can
+    /// stand in for linear interpolation as fractional delay.
     private static func allpassPhaseDelay(coeff a: Double, at w: Double) -> Double {
         let numerator = atan2(-sin(w), a + cos(w))
         let denominator = atan2(-a * sin(w), 1.0 + a * cos(w))
         return -(numerator - denominator) / w
     }
 
-    /// 解出能让基频处幅度等于 targetGain 的环路低通系数。幅度随系数单调递减，二分是稳的。
+    /// Solve for the loop low-pass coefficient that puts the magnitude at the
+    /// fundamental exactly on targetGain. Magnitude falls monotonically with the
+    /// coefficient, so bisection is stable.
     private func solveLoopCoefficient(targetGain: Double) -> Float {
         var low = 0.0
         var high = 0.9995
@@ -114,7 +141,8 @@ final class PipaString {
         return Float((low + high) * 0.5)
     }
 
-    /// 解出能让相位延迟等于 targetDelay 的全通系数。延迟随系数单调递减，二分是稳的。
+    /// Solve for the all-pass coefficient whose phase delay equals targetDelay.
+    /// Delay falls monotonically with the coefficient, so bisection is stable.
     private func solveAllpassCoefficient(targetDelay: Double) -> Float {
         var low = -0.6
         var high = 0.95
@@ -129,8 +157,10 @@ final class PipaString {
         return Float((low + high) * 0.5)
     }
 
-    /// 明亮程度 0 到 1 映射到基频处每绕一圈保留的能量比例。
-    /// 这个比例同时决定余音上限：亮弦余音长，暗弦余音短，真实乐器正是如此。
+    /// Map brightness from 0 to 1 onto the fraction of energy kept per round trip
+    /// at the fundamental. The same number also caps the tail: bright strings
+    /// ring long and dark strings ring short, which is how real instruments
+    /// behave.
     private static func loopGainForBrightness(_ brightness: Double) -> Double {
         let b = min(max(brightness, 0.0), 1.0)
         return 0.990 + (0.99995 - 0.990) * b
@@ -142,11 +172,13 @@ final class PipaString {
 
         let lowpassDelay = Self.loopPhaseDelay(coeff: s, at: w)
 
-        // 期望的总延迟是一个周期。延迟线承担整数部分，全通承担剩下的零头。
+        // The wanted total delay is one period. The delay line carries the
+        // integer part and the all-pass carries the remainder.
         let total = sampleRate / max(frequency, 20.0)
         let remaining = total - lowpassDelay
 
-        // 留半个样本给全通，让它工作在响应最平缓的区间。
+        // Leave half a sample for the all-pass so it works in the flattest part
+        // of its response.
         let integerPart = max(2, Int(floor(remaining - 0.5)))
         length = min(max(integerPart, 2), capacity - 1)
         let fractional = remaining - Double(length)
@@ -159,13 +191,15 @@ final class PipaString {
         applyDecay()
     }
 
-    /// 按当前环路增益算出每圈该保留多少能量，使基频处的余音达到期望长度。
+    /// Work out how much energy per round trip the loop gain should keep so that
+    /// the tail reaches the requested length at the fundamental.
     private func applyDecay() {
         let loopGain = Self.loopMagnitude(coeff: Double(loopCoeff), at: omega)
         let lossPerLoop = max(-log(loopGain), 1e-9)
 
-        // 每圈损失 lossPerLoop 时，衰减 60 dB 所能达到的最长余音。
-        // 超过它物理上做不到，硬要给只会让总环路增益大于 1 而自激。
+        // Longest tail that can still reach a 60 dB decay at this loss per round
+        // trip. Anything longer is physically out of reach; forcing it only
+        // pushes total loop gain above 1 and the string self-oscillates.
         let maximumDecay = 6.9078 / (max(frequency, 20.0) * lossPerLoop)
         let effective = min(max(requestedDecay, 0.02), 0.85 * maximumDecay)
 
@@ -173,16 +207,18 @@ final class PipaString {
         damping = Float(min(total / max(loopGain, 1e-9), 0.99999))
     }
 
-    /// 整音高时重算音色，让不同音高的音色特征保持一致。
+    /// Recompute the timbre whenever the pitch changes, so the same tone
+    /// character holds at every position.
     private func retune() {
         loopCoeff = solveLoopCoefficient(targetGain: Self.loopGainForBrightness(brightness))
         updateDelay()
     }
 
-    // MARK: - 参数
+    // MARK: - Parameters
 
-    /// 弦实际发出的基频，等于采样率除以环路总延迟。
-    /// 这个值用来校验音准，不依赖任何信号分析，因此不会像自相关那样在高音区误判。
+    /// Fundamental the string actually sounds, equal to the sample rate divided
+    /// by the total loop delay. Used to verify tuning: it depends on no signal
+    /// analysis, so unlike autocorrelation it cannot misjudge the high register.
     var actualFrequency: Double {
         sampleRate / max(Double(length) + extraDelaySamples, 1.0)
     }
@@ -192,47 +228,55 @@ final class PipaString {
         retune()
     }
 
-    /// 设置期望余音长度，即衰减 60 dB 需要的秒数。
-    /// 实际余音会被夹在这个弦在这个音高能做到的范围内。
+    /// Set the wanted tail length, i.e. the seconds needed to fall 60 dB. The
+    /// real tail is clamped to what this string can do at this pitch.
     func setDecayTime(_ seconds: Double) {
         requestedDecay = seconds
         applyDecay()
     }
 
-    // MARK: - 演奏
+    // MARK: - Playing
 
-    /// 实时安全的伪随机噪声：xorshift32，返回 [-1, 1]。不分配内存、不加锁。
+    /// Real-time safe pseudo-random noise: xorshift32, returning [-1, 1].
+    /// No allocation, no locking.
     private func nextNoise() -> Float {
         var x = noiseState
         x ^= x << 13
         x ^= x >> 17
         x ^= x << 5
-        if x == 0 { x = 0x9E3779B9 }   // 防止退化到全零状态
+        if x == 0 { x = 0x9E3779B9 }   // Guard against the all-zero degenerate state
         noiseState = x
         return Float(Int32(bitPattern: x)) / Float(Int32.max)
     }
 
-    /// 拨弦。
+    /// Pluck.
     ///
-    /// 物理上，拨弦是给弦一个初始位移：拨点的位置决定了哪些谐波被抵消，
-    /// 这里用梳状滤波复现。激励必须填满整个周期，只写进尾部会被回写覆盖掉。
+    /// Physically, plucking gives the string an initial displacement. Where the
+    /// string is plucked decides which harmonics cancel out, reproduced here
+    /// with a comb filter. The excitation has to fill a whole period, because
+    /// anything shorter gets overwritten by the write-back.
     /// - Parameters:
-    ///   - amplitude: 力度，0 到 1。
-    ///   - position: 拨弦位置，0 为靠琴码，1 为靠相，0.5 为常规位置。
+    ///   - amplitude: velocity, 0 to 1.
+    ///   - position: pluck position, 0 is toward the bridge, 1 toward the xiang,
+    ///     0.5 is the conventional spot.
     func pluck(amplitude: Double, position: Double) {
-        // 每次拨弦重新对齐音色与余音，保证同一个音在任何品位上都听着一致。
+        // Re-align timbre and tail on every pluck, so the same note sounds the
+        // same at every position.
         retune()
 
         let gain = Float(min(max(amplitude, 0.0), 1.0))
         let pos = min(max(position, 0.06), 0.94)
 
-        // 激励直接在延迟线里生成，全程不分配内存、不调用随机源运行时。
-        // 实时音频回调里分配内存或调用带锁的随机源会触发内核锁，造成爆音甚至崩溃，必须避免。
+        // The excitation is generated straight into the delay line: no
+        // allocation and no runtime random source. Allocating memory or calling
+        // a locking random source inside the real-time audio callback can take a
+        // kernel lock and cause dropouts or even a crash.
         for i in 0..<length {
             buffer[i] = nextNoise()
         }
 
-        // 拨点的梳状滤波：拨点处的谐波节点会被抵消，这是拨弦位置改变音色的原因。
+        // Comb filter for the pluck point: harmonics with a node at the pluck
+        // point cancel out, which is why the pluck position changes the tone.
         let combDelay = max(1, Int(Double(length) * pos))
         if combDelay < length {
             for i in stride(from: length - 1, through: combDelay, by: -1) {
@@ -240,13 +284,15 @@ final class PipaString {
             }
         }
 
-        // 去掉直流分量。环路低通在直流处增益恰好为 1，直流衰减得比基频慢几十倍，
-        // 不扣掉的话余音里最后只剩一团低频哼声。
+        // Remove the DC component. The loop low-pass has unity gain at DC, where
+        // the decay is tens of times slower than at the fundamental; without
+        // this the tail collapses into a low-frequency hum.
         var mean: Float = 0
         for i in 0..<length { mean += buffer[i] }
         mean /= Float(length)
 
-        // 归一化到单位峰值，再按力度缩放，让力度只改变音量不改变音色。
+        // Normalise to unit peak, then scale by velocity, so velocity changes
+        // loudness only and leaves the timbre alone.
         var peak: Float = 0
         for i in 0..<length {
             buffer[i] -= mean
@@ -263,7 +309,7 @@ final class PipaString {
         isRinging = true
     }
 
-    /// 止弦，把余音快速收掉。
+    /// Damp the string: pull the tail down quickly.
     func damp() {
         for i in 0..<length { buffer[i] *= 0.02 }
         loopState = 0
@@ -273,16 +319,19 @@ final class PipaString {
         isRinging = false
     }
 
-    /// 渲染一个样本。
+    /// Render one sample.
     func renderSample() -> Float {
         let raw = buffer[index]
 
-        // 一阶全通给出分数延迟，幅度恒为 1，不会像线性插值那样偷走基频的能量。
+        // The first-order all-pass supplies the fractional delay; its magnitude
+        // is identically 1, so unlike linear interpolation it steals no energy
+        // from the fundamental.
         let delayed = allpassCoeff * raw + allpassXPrev - allpassCoeff * allpassYPrev
         allpassXPrev = raw
         allpassYPrev = delayed
 
-        // 环路低通：高频每绕一圈损失更多，这是弦振动的衰减规律。
+        // Loop low-pass: high frequencies lose more on every round trip, which
+        // is how a string's vibration decays.
         let filtered = (1 - loopCoeff) * delayed + loopCoeff * loopState
         loopState = filtered
 

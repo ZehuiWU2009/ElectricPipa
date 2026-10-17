@@ -1,9 +1,10 @@
 import Foundation
 
-/// 四弦 Pipa 合成引擎。
+/// Four-string Pipa synthesis engine.
 ///
-/// 四根弦各自是一段数字波导，混合之后一起进入琴体滤波器组。
-/// 真实乐器里四根弦都耦合到同一个音箱，所以琴体只做一次，而不是每根弦各做一次。
+/// Each string is its own digital waveguide. The four are mixed and then fed
+/// through the body filter bank together: on a real instrument all four strings
+/// couple into one box, so the body is applied once rather than once per string.
 final class PipaSynth {
 
     static let stringCount = 4
@@ -11,10 +12,10 @@ final class PipaSynth {
     let sampleRate: Double
     private var strings: [PipaString] = []
 
-    /// 琴体共振，作用于四弦混合之后的输出。
+    /// Body resonance, applied to the mixed output of the four strings.
     private let body: PipaBody
 
-    /// 总输出增益。
+    /// Master output gain.
     var masterGain: Float = 0.5
 
     init(sampleRate: Double, bodySizeScale: Double = 1.0) {
@@ -24,7 +25,8 @@ final class PipaSynth {
         for index in 0..<Self.stringCount {
             let frequency = PipaTuning.frequency(string: index, fret: 0)
             let string = PipaString(sampleRate: sampleRate, frequency: frequency)
-            // 粗弦更暗更长，细弦更亮更短，这是四根弦真实的音色梯度。
+            // Thick strings are darker and longer, thin strings brighter and
+            // shorter: the real tonal gradient across the four strings.
             let thickness = Self.stringCount > 1 ? Double(index) / Double(Self.stringCount - 1) : 0
             string.setBrightness(0.34 + 0.42 * thickness)
             string.setDecayTime(4.6 - 2.6 * thickness)
@@ -32,20 +34,23 @@ final class PipaSynth {
         }
     }
 
-    /// 拨某根弦的某个品位。
+    /// Pluck one string at one position.
     /// - Parameters:
-    ///   - string: 弦索引，0 为缠弦（最粗）。
-    ///   - fret: 品位，0 为空弦。
-    ///   - velocity: 力度，0 到 1。
-    ///   - position: 右手拨弦位置，0.5 为常规位置，越小越靠近琴码、音色越硬。
+    ///   - string: string index, 0 is the Chan string (thickest).
+    ///   - fret: position, 0 is the open string.
+    ///   - velocity: velocity, 0 to 1.
+    ///   - position: right-hand pluck position. 0.5 is the conventional spot;
+    ///     smaller is closer to the bridge and gives a harder tone.
     func pluck(string: Int, fret: Int, velocity: Double = 0.8, position: Double = 0.5) {
         guard strings.indices.contains(string) else { return }
         let target = strings[string]
 
-        // 先定音高，余音长度和延迟线长度都依赖它。
+        // Set the pitch first: both the tail length and the delay-line length
+        // depend on it.
         target.frequency = PipaTuning.frequency(string: string, fret: fret)
 
-        // 按弦缩短了振动长度，余音相应变短。
+        // Stopping the string shortens the vibrating length, so the tail
+        // shortens with it.
         let thickness = Self.stringCount > 1 ? Double(string) / Double(Self.stringCount - 1) : 0
         let baseDecay = 4.6 - 2.6 * thickness
         let fretFactor = 1.0 / (1.0 + Double(fret) * 0.035)
@@ -54,8 +59,9 @@ final class PipaSynth {
         target.pluck(amplitude: velocity, position: position)
     }
 
-    /// 校验用：把某根弦设到指定品位，返回延迟线实际给出的基频。
-    /// 这个值不受信号分析误差影响，用来做全音域音准检查。
+    /// For verification: set one string to a position and return the fundamental
+    /// the delay line actually produces. This value is free of signal-analysis
+    /// error, so it is what the whole-range tuning check runs on.
     func measuredFrequency(string: Int, fret: Int) -> Double {
         guard strings.indices.contains(string) else { return 0 }
         let target = strings[string]
@@ -63,37 +69,40 @@ final class PipaSynth {
         return target.actualFrequency
     }
 
-    /// 以任意频率发声，用于泛音和滑音的起点。
+    /// Sound an arbitrary frequency, used as the starting point for harmonics
+    /// and slides.
     func pluckFrequency(string: Int, frequency: Double, velocity: Double = 0.8, position: Double = 0.5) {
         guard strings.indices.contains(string) else { return }
         strings[string].frequency = frequency
         strings[string].pluck(amplitude: velocity, position: position)
     }
 
-    /// 推弦或拉弦，把某根弦的音高连续推到目标频率。
+    /// Push or pull the string, gliding its pitch continuously to the target
+    /// frequency.
     func bend(string: Int, to frequency: Double) {
         guard strings.indices.contains(string) else { return }
         strings[string].frequency = frequency
     }
 
-    /// 止弦。
+    /// Damp one string.
     func damp(string: Int) {
         guard strings.indices.contains(string) else { return }
         strings[string].damp()
     }
 
-    /// 全部止弦。
+    /// Damp every string.
     func dampAll() {
         for index in strings.indices { strings[index].damp() }
     }
 
-    /// 统一设定四根弦的明亮程度，0 暗到 1 亮。
+    /// Set the brightness of all four strings at once, 0 dark to 1 bright.
     func setBrightness(_ value: Double) {
         for index in strings.indices { strings[index].setBrightness(value) }
     }
 
-    /// 扫弦，四根弦依次快速发声。
-    /// - Parameter ascending: true 为由缠弦扫向子弦（拂），false 为反向（扫）。
+    /// Strum, sounding the four strings in quick succession.
+    /// - Parameter ascending: true sweeps from the Chan string toward the Zi
+    ///   string (fu), false the other way (sao).
     func strum(ascending: Bool = true, velocity: Double = 0.75, spacing: Double = 0.018) {
         let order = ascending ? Array(0..<Self.stringCount) : Array((0..<Self.stringCount).reversed())
         for (offset, string) in order.enumerated() {
@@ -104,13 +113,14 @@ final class PipaSynth {
         }
     }
 
-    /// 轮指，在一段时间内以固定密度反复拨同一根弦。
-    /// - Parameter rate: 每秒拨弦次数，专业演奏可达每秒 8 到 12 次。
+    /// Tremolo, repeating plucks on one string at a fixed density for a while.
+    /// - Parameter rate: plucks per second; professional playing reaches 8 to 12.
     func tremolo(string: Int, fret: Int, rate: Double, duration: Double, velocity: Double = 0.55) {
         let count = max(1, Int(rate * duration))
         for index in 0..<count {
             let delay = duration * Double(index) / Double(count)
-            // 轮指由食指、中指、无名指、小指依次弹出，力度天然有起伏。
+            // Tremolo is thrown by index, middle, ring and little finger in
+            // turn, so the velocity naturally rises and falls.
             let accent = 1.0 + 0.18 * sin(Double(index % 4) * 1.7)
             Scheduler.shared.schedule(after: delay) { [weak self] in
                 self?.pluck(string: string, fret: fret, velocity: velocity * accent, position: 0.55)
@@ -118,7 +128,7 @@ final class PipaSynth {
         }
     }
 
-    /// 渲染一个样本。
+    /// Render one sample.
     func renderSample() -> Float {
         Scheduler.shared.advance(sampleRate: sampleRate)
         var sum: Float = 0
@@ -128,7 +138,7 @@ final class PipaSynth {
         return body.process(sum) * masterGain
     }
 
-    /// 渲染一段到缓冲区。
+    /// Render a stretch into a buffer.
     func render(into output: inout [Float], count: Int) {
         for index in 0..<count {
             output[index] = renderSample()
@@ -136,7 +146,8 @@ final class PipaSynth {
     }
 }
 
-/// 极简的样本精度事件调度器，用于在离线渲染里安排扫弦和轮指的时间差。
+/// A minimal sample-accurate event scheduler, used to lay out the time offsets
+/// of strums and tremolos during offline rendering.
 final class Scheduler: @unchecked Sendable {
     static let shared = Scheduler()
 

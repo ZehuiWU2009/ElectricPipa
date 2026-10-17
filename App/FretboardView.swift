@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// 指板：四根弦各一行，每行三十一个品位（含空弦）。
-/// 轻点任意格子拨响对应音；在指板上横向滑动则触发扫弦。
+/// Position board: one row per string, thirty-one positions each including the
+/// open string. Tap any cell to sound it; drag horizontally across the board to
+/// strum.
 struct FretboardView: View {
     @EnvironmentObject private var audio: AudioEngine
 
@@ -11,13 +12,13 @@ struct FretboardView: View {
     let onPluck: (Int, Int) -> Void
 
     private let stringNames = ["缠弦", "老弦", "中弦", "子弦"]
-    private let fretCount = PipaTuning.positionCount   // 32：空弦 + 六相 + 二十五品
-    /// Pipa 面板上真实的品位标记位置。
+    private let fretCount = PipaTuning.positionCount   // 32: open string + six xiang + twenty-five frets
+    /// Real position-marker locations on a Pipa soundboard.
     private let markers = Set([7, 12, 19, 25])
 
     var body: some View {
         VStack(spacing: 0) {
-            // 品位刻度
+            // Position scale
             HStack(spacing: 0) {
                 Color.clear.frame(width: 64)
                 HStack(spacing: 0) {
@@ -31,7 +32,7 @@ struct FretboardView: View {
             }
             Divider().overlay(Color.white.opacity(0.2))
 
-            // 四根弦
+            // The four strings
             ForEach(0..<4) { string in
                 HStack(spacing: 0) {
                     Text(stringNames[string])

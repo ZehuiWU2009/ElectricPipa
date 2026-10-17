@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-/// 一类演奏事件。
+/// One kind of performance event.
 fileprivate enum PipaEvent {
     case pluck(string: Int, fret: Int, velocity: Double, position: Double)
     case bend(string: Int, to: Double)
@@ -11,31 +11,38 @@ fileprivate enum PipaEvent {
     case setMasterGain(Float)
 }
 
-/// 一条排好时间的事件。
+/// One event with its time already resolved.
 fileprivate struct ScheduledPipaEvent {
     let dueSample: Int64
     let event: PipaEvent
 }
 
-/// 真正跑在音频线程上的内核。
+/// The kernel that actually runs on the audio thread.
 ///
-/// 合成器与事件队列都收在这里。为避免在实时线程上做任何内存分配、加锁或调用随机源，
-/// 事件队列用有界环形缓冲加原子序号实现（主线程生产、渲染线程消费），所有对合成器的
-/// 改写也只在渲染线程里发生：主线程只把演奏意图投进队列，渲染线程在对应采样点取出并作用。
-/// 这样 AVAudioSourceNode 的渲染闭包就能安全地捕获它，且全程零分配、无锁、无随机源，
-/// 满足 CoreAudio 对实时回调的硬性要求。
+/// The synth and the event queue both live here. To keep the real-time thread
+/// free of memory allocation, locking and random sources, the event queue is a
+/// bounded ring buffer with atomic indices: the main thread produces, the render
+/// thread consumes. Every write to the synth also happens on the render thread
+/// only. The main thread just drops performance intent into the queue, and the
+/// render thread picks it up at the matching sample and applies it. The
+/// AVAudioSourceNode render block can therefore capture this object safely while
+/// the whole path stays allocation-free, lock-free and random-source-free, which
+/// is what CoreAudio demands of a real-time callback.
 final class PipaAudioCore: @unchecked Sendable {
     let sampleRate: Double
     let synth: PipaSynth
 
-    // 有界环形事件队列。容量远大于一次演奏同时堆积的事件数。
-    // 单生产者（主线程）单消费者（渲染线程）模式：用普通整数下标加 OSMemoryBarrier 做无锁同步，
-    // 渲染线程全程不分配内存、不加锁，满足 CoreAudio 实时回调的硬性要求。
+    // Bounded ring buffer for events. The capacity far exceeds the number of
+    // events a single gesture can pile up.
+    // Single producer (main thread), single consumer (render thread): plain
+    // integer indices plus OSMemoryBarrier give lock-free synchronisation, so
+    // the render thread never allocates and never locks, which is what CoreAudio
+    // demands of a real-time callback.
     private let queueCapacity = 128
     private var eventQueue: ContiguousArray<ScheduledPipaEvent>
-    private var enqueueIndex: Int = 0   // 仅主线程写
-    private var dequeueIndex: Int = 0   // 仅渲染线程写
-    private var rendered: Int64 = 0      // 渲染线程写，主线程近似读
+    private var enqueueIndex: Int = 0   // written by the main thread only
+    private var dequeueIndex: Int = 0   // written by the render thread only
+    private var rendered: Int64 = 0      // written by the render thread, read approximately by the main thread
 
     init(sampleRate: Double, bodySizeScale: Double = 1.0) {
         self.sampleRate = sampleRate
@@ -43,17 +50,19 @@ final class PipaAudioCore: @unchecked Sendable {
         self.eventQueue = ContiguousArray(repeating: ScheduledPipaEvent(dueSample: 0, event: .dampAll), count: queueCapacity)
     }
 
-    /// 主线程侧设置：只投递意图，真正的改写发生在渲染线程。
+    /// Main-thread side settings: only intent is queued; the real write happens
+    /// on the render thread.
     func setMasterGain(_ value: Float) { enqueue(.setMasterGain(value), at: rendered) }
     func setBrightness(_ value: Double) { enqueue(.setBrightness(value), at: rendered) }
 
-    // MARK: - 实时渲染
+    // MARK: - Real-time rendering
 
     func render(frames: Int, bufferList: UnsafeMutablePointer<AudioBufferList>) {
         let abl = UnsafeMutableAudioBufferListPointer(bufferList)
         guard abl.count > 0 else { return }
 
-        // 以所有声道里最小的容量为上限，避免写入越界。
+        // Cap the work at the smallest capacity across channels, so nothing is
+        // ever written out of bounds.
         var n = frames
         for buf in 0..<abl.count {
             guard abl[buf].mData != nil else { n = 0; break }
@@ -64,7 +73,8 @@ final class PipaAudioCore: @unchecked Sendable {
 
         let prod = enqueueIndex
         for i in 0..<n {
-            // 取出所有已到点的事件，作用到合成器上。这一步只在渲染线程发生。
+            // Pick up every event that has come due and apply it to the synth.
+            // This step happens on the render thread only.
             var cons = dequeueIndex
             let now = rendered
             while cons != prod {
@@ -104,15 +114,17 @@ final class PipaAudioCore: @unchecked Sendable {
         }
     }
 
-    // MARK: - 主线程接口
+    // MARK: - Main-thread interface
 
     private func enqueue(_ event: PipaEvent, at dueSample: Int64) {
         let prod = enqueueIndex
         let cons = dequeueIndex
-        // 队列满则丢弃（实时场景极少触发：宁可漏一个事件，也不在实时线程分配内存）。
+        // Drop the event when the queue is full. This almost never fires in
+        // practice: missing one event is preferable to allocating on the
+        // real-time thread.
         if (prod + 1) % queueCapacity == cons % queueCapacity { return }
         eventQueue[prod % queueCapacity] = ScheduledPipaEvent(dueSample: dueSample, event: event)
-        OSMemoryBarrier()  // 确保槽位写入对渲染线程可见，再推进下标
+        OSMemoryBarrier()  // Make the slot write visible to the render thread before the index advances
         enqueueIndex = prod + 1
     }
 
@@ -155,16 +167,22 @@ final class PipaAudioCore: @unchecked Sendable {
     }
 }
 
-/// 把 PipaSynth 接到手机的实时音频引擎（主线程侧）。
+/// The main-thread side that wires PipaSynth into the phone's real-time audio
+/// engine.
 ///
-/// 它负责 AVAudioEngine 的生命周期，并把 UI 的演奏意图转交给 PipaAudioCore。
-/// 所有会触发音频的入口都先调用 ensureStarted，满足 iOS「音频须在用户手势后启动」的要求。
+/// It owns the AVAudioEngine lifecycle and turns UI performance intent into
+/// events for PipaAudioCore. Every entry point that can make sound calls
+/// ensureStarted first, satisfying the iOS rule that audio must start from a
+/// user gesture.
 ///
-/// 装配要点（修复 iOS 26 上 AURemoteIO::IOThread 的 EXC_BREAKPOINT）：
-/// AVAudioSourceNode 的格式必须严格等于引擎实际的输出格式（采样率 + 声道数），
-/// 并直接连到 outputNode，绕开 iOS 26 默认的空间混音器。否则源节点与输出之间会被
-/// 插入采样率/声道数转换器，其输入缓冲区列表会被 CoreAudio 判为「bogus」
-/// （CrashIfClientProvidedBogusAudioBufferList），触发实时线程上的断言崩溃。
+/// Wiring notes, from fixing an EXC_BREAKPOINT on AURemoteIO::IOThread under
+/// iOS 26: the AVAudioSourceNode format has to match the engine's real output
+/// format exactly, sample rate and channel count alike, and the node connects
+/// straight to the output node, bypassing the spatial mixer that iOS 26 installs
+/// by default. Otherwise a sample-rate or channel converter gets inserted
+/// between the source and the output, CoreAudio judges its input buffer list
+/// bogus (CrashIfClientProvidedBogusAudioBufferList) and an assertion kills the
+/// real-time thread.
 @MainActor
 final class AudioEngine: ObservableObject {
     private var core: PipaAudioCore!
@@ -199,8 +217,10 @@ final class AudioEngine: ObservableObject {
         try session.setPreferredSampleRate(preferredSampleRate)
         try session.setActive(true)
 
-        // 读引擎真实的输出格式：会话可能把 48000 回退到设备实际支持的采样率，
-        // 声道数也以输出为准。源节点必须与它完全一致，杜绝中间的格式转换。
+        // Read the engine's real output format: the session may fall back from
+        // 48000 to whatever the device supports, and the channel count follows
+        // the output. The source node has to match it exactly so that no
+        // converter is inserted anywhere.
         let outputFormat = engine.outputNode.inputFormat(forBus: 0)
         let rate = outputFormat.sampleRate > 0 ? outputFormat.sampleRate : preferredSampleRate
         let channels: AVAudioChannelCount = outputFormat.channelCount > 0 ? outputFormat.channelCount : 2
@@ -210,8 +230,9 @@ final class AudioEngine: ObservableObject {
                                    channels: channels,
                                    interleaved: false)!
 
-        // 用真实采样率重建 DSP 内核：音高以频率(Hz)为准，任何采样率都正确，
-        // 且此时源节点采样率与输出一致，不会再插入采样率转换器。
+        // Rebuild the DSP kernel at the real sample rate: pitch is defined in
+        // Hz, so any rate is correct, and now the source and the output agree,
+        // so no sample-rate converter can appear.
         let core = PipaAudioCore(sampleRate: rate, bodySizeScale: 1.0)
         core.setMasterGain(masterGain)
         core.setBrightness(brightness)
@@ -227,13 +248,15 @@ final class AudioEngine: ObservableObject {
         DispatchQueue.main.async { self.isRunning = true }
     }
 
-    /// 渲染块工厂，必须在 nonisolated 上下文里创建。
+    /// Render block factory, which must be created in a nonisolated context.
     ///
-    /// 如果在 `@MainActor` 的 start() 里直接写闭包，闭包会继承 MainActor 隔离；
-    /// CoreAudio 从实时 IO 线程调用它时，Swift 6 运行时的
-    /// `MainActor.assumeIsolated` 检查失败，会直接 `__builtin_trap()`
-    /// —— 表现为 `AURemoteIO::IOThread: EXC_BREAKPOINT`，进程当场死掉。
-    /// 放进 nonisolated 工厂后闭包不带任何 actor 隔离，IO 线程调用即安全。
+    /// Writing the closure directly inside the @MainActor start() makes the
+    /// closure inherit MainActor isolation. When CoreAudio then calls it from
+    /// the real-time IO thread, the Swift 6 runtime's MainActor.assumeIsolated
+    /// check fails and the process dies on __builtin_trap(), surfacing as
+    /// AURemoteIO::IOThread: EXC_BREAKPOINT. Creating the block in a nonisolated
+    /// factory leaves it free of any actor isolation, so the IO thread can call
+    /// it safely.
     nonisolated private static func makeRenderBlock(core: PipaAudioCore) -> AVAudioSourceNodeRenderBlock {
         { _, _, frameCount, audioBufferList in
             core.render(frames: Int(frameCount), bufferList: audioBufferList)
@@ -247,7 +270,7 @@ final class AudioEngine: ObservableObject {
         DispatchQueue.main.async { self.isRunning = false }
     }
 
-    // MARK: - 对外演奏接口
+    // MARK: - Performance interface
 
     func pluck(string: Int, fret: Int, velocity: Double = 0.85, position: Double = 0.5) {
         ensureStarted()

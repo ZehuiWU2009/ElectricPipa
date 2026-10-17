@@ -1,26 +1,29 @@
 import Foundation
 import Accelerate
 
-/// Pipa 琴体的声学模型。
+/// Acoustic model of the Pipa body.
 ///
-/// Pipa 是半梨形木箱，桐木面板、硬木背板，内部有一个明显的空气腔共振，
-/// 面板本身还有若干阶振动模式。这里用五个 peaking 滤波器去逼近这些共振峰，
-/// 它们决定了「这是 Pipa 而不是吉他」的音色骨架。
+/// The Pipa is a half-pear-shaped wooden box: a paulownia soundboard, a hardwood
+/// back, and a pronounced air-cavity resonance inside, with the soundboard
+/// itself carrying several modes of vibration. Five peaking filters stand in for
+/// these resonances, and together they form the tonal skeleton that says this is
+/// a Pipa and not a guitar.
 final class PipaBody {
 
     private var filters: [Biquad] = []
 
-    /// 琴体尺寸缩放，1.0 为标准。数值越小琴体越大，共振越低。
+    /// Body size scale, 1.0 is standard. Smaller means a bigger body and lower
+    /// resonances.
     private let sizeScale: Double
 
     init(sampleRate: Double, sizeScale: Double = 1.0) {
         self.sizeScale = sizeScale
         let peaks: [(frequency: Double, q: Double, gainDB: Double)] = [
-            (205, 3.5, 9.0),    // 空气腔共振，低音区厚度主要来自这里
-            (420, 3.0, 6.0),    // 面板第一阶弯曲模式
+            (205, 3.5, 9.0),    // Air-cavity resonance; most of the low-register weight comes from here
+            (420, 3.0, 6.0),    // First bending mode of the soundboard
             (760, 2.6, 4.5),
             (1350, 2.2, 3.5),
-            (2600, 1.8, 2.5),   // 高频亮度，决定金属弦的颗粒感
+            (2600, 1.8, 2.5),   // High-frequency brightness; sets the grain of the metal-wound strings
         ]
         filters = peaks.map { peak in
             Biquad.peaking(
@@ -32,7 +35,7 @@ final class PipaBody {
         }
     }
 
-    /// 逐样本处理，用于 Commuted Synthesis 之外的直接滤波。
+    /// Per-sample processing, used for direct filtering outside commuted synthesis.
     func process(_ input: Float) -> Float {
         var value = input
         for index in filters.indices {
@@ -41,22 +44,27 @@ final class PipaBody {
         return value
     }
 
-    /// 重置内部状态，切换音符前调用。
+    /// Reset internal state; call before switching notes.
     func reset() {
         for index in filters.indices { filters[index].reset() }
     }
 
     // MARK: - Commuted Synthesis
 
-    /// 把短激励与琴体脉冲响应卷积，得到「预卷积激励」。
+    /// Convolve a short excitation with the body impulse response to obtain a
+    /// pre-convolved excitation.
     ///
-    /// Commuted Synthesis 的关键在于交换运算顺序：琴体响应是时不变的，
-    /// 与其对每个输出样本做一次长卷积，不如先把很短的激励信号与脉冲响应卷积一次，
-    /// 再用结果去驱动弦模型，音色等效但计算量下降两三个数量级。
+    /// The point of commuted synthesis is that the two operations swap places:
+    /// the body response is time-invariant, so instead of running a long
+    /// convolution on every output sample, the very short excitation is
+    /// convolved with the impulse response once and the result drives the
+    /// string model. The timbre is equivalent while the cost drops by two or
+    /// three orders of magnitude.
     /// - Parameters:
-    ///   - excitation: 原始激励，通常只有几毫秒。
-    ///   - impulseResponse: 琴体脉冲响应，可以是实测的，也可以由本类合成。
-    /// - Returns: 预卷积后的激励，长度约为两者之和。
+    ///   - excitation: the raw excitation, usually only a few milliseconds.
+    ///   - impulseResponse: the body impulse response, either measured on a real
+    ///     instrument or synthesised by this class.
+    /// - Returns: the pre-convolved excitation, about as long as both inputs together.
     static func commute(excitation: [Float], impulseResponse: [Float]) -> [Float] {
         guard !excitation.isEmpty, !impulseResponse.isEmpty else { return excitation }
 
@@ -78,7 +86,7 @@ final class PipaBody {
             }
         }
 
-        // 归一化，避免换了脉冲响应之后音量失控。
+        // Normalise, so the level does not run away when the impulse response changes.
         var peak: Float = 0
         var scalar: Float = 0
         vDSP_maxmgv(result, 1, &peak, vDSP_Length(result.count))
@@ -89,17 +97,19 @@ final class PipaBody {
         return result
     }
 
-    /// 合成一个近似的琴体脉冲响应，用于没有实测录音时兜底。
+    /// Synthesise an approximate body impulse response, used as a fallback when
+    /// no measured recording is available.
     ///
-    /// 做法是让一段极短的脉冲通过琴体滤波器组，再叠上指数衰减包络，
-    /// 得到的响应保留了共振峰位置，但比实测的粗糙。
+    /// A very short pulse is pushed through the body filter bank and the result
+    /// is given an exponential envelope. The response keeps the resonance
+    /// positions but is cruder than a measured one.
     static func synthesizeImpulseResponse(sampleRate: Double, lengthSeconds: Double = 0.25, sizeScale: Double = 1.0) -> [Float] {
         let body = PipaBody(sampleRate: sampleRate, sizeScale: sizeScale)
         let count = Int(sampleRate * lengthSeconds)
         var response = [Float](repeating: 0, count: count)
 
-        // 让单位脉冲通过琴体滤波器组，滤波器自身的振铃就是脉冲响应的主体，
-        // 再乘一个指数包络把尾巴收干净。
+        // The filters ringing on a unit pulse is the bulk of the impulse
+        // response; the exponential envelope cleans up the tail.
         for index in 0..<count {
             let input: Float = index == 0 ? 1.0 : 0.0
             let filtered = body.process(input)
@@ -110,7 +120,7 @@ final class PipaBody {
     }
 }
 
-/// 双二阶滤波器，转置直接 II 型实现，数值上比直接 I 型稳定。
+/// Biquad filter, transposed direct form II, numerically steadier than direct form I.
 struct Biquad {
     private var b0: Float = 1, b1: Float = 0, b2: Float = 0
     private var a1: Float = 0, a2: Float = 0
@@ -128,7 +138,7 @@ struct Biquad {
         z2 = 0
     }
 
-    /// peaking EQ，按 Robert Bristow-Johnson 的音频滤波器手册构造。
+    /// Peaking EQ, built after Robert Bristow-Johnson's audio filter cookbook.
     static func peaking(sampleRate: Double, frequency: Double, q: Double, gainDB: Double) -> Biquad {
         let amplitude = pow(10.0, gainDB / 40.0)
         let omega = 2.0 * Double.pi * frequency / sampleRate

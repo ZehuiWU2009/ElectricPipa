@@ -1,9 +1,10 @@
 import Foundation
 
-/// WAV 文件的读写。写出的 24 bit 文件可以直接作为作品集素材提交。
+/// Reading and writing WAV files. The 24-bit output is ready for any downstream
+/// use.
 enum WavFile {
 
-    /// 把单声道浮点样本写成 24 bit PCM WAV。
+    /// Write mono float samples as a 24-bit PCM WAV file.
     static func writeMono24Bit(_ samples: [Float], sampleRate: Int, to url: URL) throws {
         var bytes: [UInt8] = []
         bytes.reserveCapacity(44 + samples.count * 3)
@@ -14,13 +15,13 @@ enum WavFile {
         bytes.append(contentsOf: Array("WAVE".utf8))
 
         bytes.append(contentsOf: Array("fmt ".utf8))
-        bytes.append(contentsOf: littleEndian(UInt32(16)))          // fmt 块长度
+        bytes.append(contentsOf: littleEndian(UInt32(16)))          // fmt chunk length
         bytes.append(contentsOf: littleEndian(UInt16(1)))           // PCM
-        bytes.append(contentsOf: littleEndian(UInt16(1)))           // 单声道
+        bytes.append(contentsOf: littleEndian(UInt16(1)))           // mono
         bytes.append(contentsOf: littleEndian(UInt32(sampleRate)))
-        bytes.append(contentsOf: littleEndian(UInt32(sampleRate * 3))) // 字节率
-        bytes.append(contentsOf: littleEndian(UInt16(3)))           // 块对齐
-        bytes.append(contentsOf: littleEndian(UInt16(24)))          // 位深
+        bytes.append(contentsOf: littleEndian(UInt32(sampleRate * 3))) // byte rate
+        bytes.append(contentsOf: littleEndian(UInt16(3)))           // block align
+        bytes.append(contentsOf: littleEndian(UInt16(24)))          // bit depth
 
         bytes.append(contentsOf: Array("data".utf8))
         bytes.append(contentsOf: littleEndian(UInt32(dataSize)))
@@ -37,7 +38,8 @@ enum WavFile {
         try Data(bytes).write(to: url)
     }
 
-    /// 读取 WAV 为单声道浮点样本，支持 16 / 24 / 32 bit 整数与 32 bit 浮点。
+    /// Read a WAV file as mono float samples. Supports 16 / 24 / 32-bit integer
+    /// and 32-bit float.
     static func readMono(_ url: URL) throws -> (samples: [Float], sampleRate: Int) {
         let data = try Data(contentsOf: url)
         guard data.count > 44 else { throw WavError.fileTooShort }

@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// 电子琵琶主界面：左侧四根弦的名称，右侧是可滚动的品位指板，下方是一组演奏按钮和音色滑块。
+/// Main screen of the electric Pipa: string names on the left, a scrollable
+/// position board on the right, and a row of technique buttons plus timbre
+/// sliders below.
 struct PipaView: View {
     @EnvironmentObject private var audio: AudioEngine
 
-    /// 当前选中的弦与品位，轮指和止音作用于它。
+    /// Currently selected string and position; tremolo and damping act on it.
     @State private var selection: (string: Int, fret: Int) = (3, 7)
-    /// 刚被拨响的格子，用来做高亮动画。
+    /// The cell just plucked, used for the highlight animation.
     @State private var litCell: (string: Int, fret: Int)? = nil
 
     private let stringNames = ["缠弦", "老弦", "中弦", "子弦"]
@@ -90,7 +92,8 @@ struct PipaView: View {
         }
     }
 
-    /// 主线程触发一次拨弦，并点亮对应格子做动画。
+    /// Trigger one pluck from the main thread and light the matching cell for
+    /// the animation.
     private func play(string: Int, fret: Int) {
         audio.pluck(string: string, fret: fret)
         selection = (string, fret)

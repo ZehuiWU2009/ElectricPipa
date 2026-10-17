@@ -1,141 +1,448 @@
 # Electric Pipa · 电子琵琶
 
-一款可在 iPhone / iPad 上弹奏的**物理建模合成**电子琵琶。所有声音都在手机本地、实时用数字波导算法算出来——不是在播放采样，是把琵琶这件乐器用代码"造"了一遍。
-
-项目定位：美国本科申请作品集（CMU BCSA，Music Technology 方向）的一件"用计算处理声音"的作品。它把一件真实的民族乐器，变成了可交互的 Swift 程序，同时补齐了作品集要求的「自工程音频 + 代码清单 + 软件截图」三档。
+> 本 README 英文在前、中文在后。
+> This README is in English first, then Chinese.
 
 ---
 
-## 开发者
+# Electric Pipa
 
-| 项目 | 内容 |
+A physical-modelling synthesiser for the Pipa that runs on iPhone and iPad. Every sound is computed in real time on the device with digital waveguide algorithms. Nothing is played back from samples: the instrument is rebuilt in code, string by string, body and all.
+
+> Personal project · grown out of my own Pipa practice, still evolving
+>
+> Developer: Zehui Wu (吴泽荟)
+> School: Wuhan Cogdel Cranleigh High School (武汉康礼高级中学)
+
+I have played the Pipa since childhood. Most software instruments cover the Western orchestra, and the Pipa rarely gets a physically modelled implementation, so I set out to build one myself and to understand the acoustics of my own instrument along the way. This repository is that exploration.
+
+## Technical Contributions of This Project
+
+### Contribution 1 · A Karplus-Strong digital waveguide as the acoustic skeleton
+
+The core is a digital waveguide model of a single string, running the classic Karplus-Strong plucked-string algorithm:
+
+> Fill a delay line exactly one fundamental period long with shaped noise, which stands in for the string's initial displacement. Each sample reads out of the far end, passes through a loop low-pass, is scaled by the loop gain and is written back where it came from. High frequencies lose more energy on every round trip, so the noise settles into a pitched tone. The length of the line sets the pitch; the loop low-pass sets the timbre and the tail.
+
+References:
+
+- Karplus, K., & Strong, A. (1983). *Digital Synthesis of Plucked-String and Drum Timbres.* Computer Music Journal, 7(2), 43-55. The original algorithm.
+- Jaffe, D. A., & Smith, J. O. (1983). *Extensions of the Karplus-Strong Plucked-String Algorithm.* Computer Music Journal, 7(2), 56-69. Introduced a tunable low-pass in place of the fixed average, which is where the brightness parameter of this project's loop filter comes from.
+- Smith, J. O. *Physical Audio Signal Processing* (online text, CCRMA, Stanford). The basis for the all-pass fractional delay, commuted synthesis and the physical bound on loop gain.
+
+### Contribution 2 · Three fixes that make the whole range sound
+
+The textbook algorithm behaves well in the low and middle registers, but on a Pipa the high positions end up "a waveform with no pitch": FFT measurements show nothing left but a cloud of low-frequency noise. Rather than stopping at the textbook implementation, this project located and fixed three faults that break the whole range. This is the real technical content of the project.
+
+**1. The loop low-pass response has to scale with the fundamental.**
+
+Every loss in the loop is charged per round trip, and the number of round trips per second is the fundamental frequency itself. A ratio that is harmless at 220 Hz compounds more than two thousand times a second at 2349 Hz and wipes the fundamental out instantly.
+
+- The cutoff of the loop low-pass is no longer fixed. Bisection solves for the coefficient that puts the magnitude at the fundamental exactly on a target gain (`solveLoopCoefficient` in `PipaString.swift`). The fraction of energy kept per round trip at the fundamental is governed by one brightness parameter, so the high and low registers stay consistent.
+- A side constraint: for a given loss per round trip there is a physical ceiling on the longest tail that can still fall 60 dB (`maximumDecay`). Exceeding it pushes total loop gain above 1 and the string self-oscillates, so the requested tail is clamped inside 85% of that ceiling (`applyDecay`).
+
+**2. Fractional delay uses a first-order all-pass, not linear interpolation.**
+
+The delay-line length is generally not an integer, and the naive implementation fills the remainder with linear interpolation. But linear interpolation is itself a low-pass, and its loss at the fundamental compounds in exactly the same way, stealing energy from the high register.
+
+- A first-order all-pass `(a + z^-1)/(1 + a*z^-1)` carries the fractional part instead (`solveAllpassCoefficient`). Its magnitude is identically 1, so it contributes phase delay only and takes no energy away, which is precisely why it can replace linear interpolation as fractional delay.
+- Total delay = integer part of the delay line + low-pass phase delay + all-pass phase delay. `actualFrequency` is computed analytically along this chain and drives the whole-range tuning check, so it depends on no signal analysis and cannot misjudge the high register.
+
+**3. The excitation has to be strictly zero-mean.**
+
+The loop low-pass has unity gain at DC, where decay runs tens of times slower than at the fundamental. Any non-zero mean in the excitation noise therefore survives as a low-frequency hum in the tail.
+
+- The pluck excitation has its overall mean subtracted before normalisation (`pluck`), so the DC component is stripped completely.
+
+### Contribution 3 · Body resonances and commuted synthesis
+
+The four strings are separate digital waveguides. They are mixed and then fed through the body filter bank together, because on a real instrument all four strings couple into one box, so the body is applied once rather than once per string.
+
+- Five peaking filters stand in for the resonances of the half-pear-shaped wooden box (air cavity, soundboard bending modes, high-frequency brightness), and they form the tonal skeleton that says this is a Pipa and not a guitar (`PipaBody.swift`).
+- Commuted synthesis is provided: the very short excitation is convolved with the body impulse response once using `vDSP_conv` from Accelerate, and the result drives the string model. The timbre is equivalent while the cost drops by two or three orders of magnitude. The impulse response can either be measured on a real instrument or synthesised from the filter bank as a fallback (`synthesizeImpulseResponse`).
+- Swapping in the impulse response measured from a real instrument is the planned next step, and it is what pulls the tone from "plastic electronics" toward "your own instrument".
+
+### Contribution 4 · Real-time audio engineering on the render thread
+
+`AudioEngine.swift` wires the synth into `AVAudioEngine`. CoreAudio demands that a real-time callback never allocate memory, never lock and never touch a locking random source, so the render path is built to that spec:
+
+- The event queue is a bounded ring buffer with plain integer indices plus `OSMemoryBarrier()`, single producer on the main thread and single consumer on the render thread. Lock-free, allocation-free.
+- Every write to the synth, brightness and master gain included, happens on the render thread only. The main thread just drops performance intent into the queue, which also removes any data race between the main and real-time threads.
+- The pluck excitation uses an xorshift32 pseudo-random source instead of a runtime random source: deterministic, no allocation, no locking.
+- Two crash-level findings from bringing this up under iOS 26 are recorded in the code comments of `AudioEngine.swift`, since both cost a full debugging cycle to find:
+  - The `AVAudioSourceNode` format has to match the engine's real output format exactly, sample rate and channel count alike, and the node connects straight to the output node, bypassing the spatial mixer iOS 26 installs by default. Otherwise a converter is inserted and CoreAudio's internal assertion kills the real-time thread (`CrashIfClientProvidedBogusAudioBufferList`).
+  - The render block must be built in a `nonisolated` factory. Written directly inside the `@MainActor` start method, the closure inherits MainActor isolation, and the Swift 6 runtime traps when CoreAudio calls it from the IO thread.
+
+### Contribution 5 · Technique modelling and whole-range tuning verification
+
+- Techniques modelled: single pluck with adjustable velocity and right-hand position, tremolo, strum in both directions, push-pull pitch bends, and damping.
+- Pitch is defined in Hz, so the same note is correct at any sample rate; bends only recompute the delay and leave the timbre alone, so the tone does not jump while the pitch glides.
+- The offline renderer (`Renderer/main.swift`) verifies tuning across the whole range: open strings within ±0.2 cents, all 128 positions within 0.00 cents by the analytic method, and the high register within ±0.5 cents under autocorrelation. All far inside the roughly ±5 cents a human ear can resolve.
+- `PipaAudio/` carries seven 24-bit WAV pieces written by the renderer: open strings, a pentatonic scale, tremolo, strum, a push-pull slide, a short phrase, and the synthesised body impulse response.
+
+## System Architecture
+
+The signal path is short and every stage is on device. The main thread only forwards intent; all sound is computed on the audio render thread.
+
+```mermaid
+flowchart TB
+    subgraph MAIN ["Main thread"]
+        U1["FretboardView<br/>4 strings × 32 touch positions"]
+        U2["PipaView<br/>technique buttons, brightness and volume"]
+        U3["AudioEngine (@MainActor)<br/>session and graph wiring"]
+    end
+    subgraph AUDIO ["Audio render thread"]
+        Q["SPSC event queue<br/>lock-free, sample-accurate"]
+        S1["PipaString × 4<br/>digital waveguide"]
+        B["PipaBody<br/>five peaking resonances"]
+        G["master gain"]
+    end
+    U1 --> U2
+    U2 --> U3
+    U3 -->|"intent only"| Q
+    Q --> S1
+    S1 --> B
+    B --> G
+    G --> OUT["AVAudioSourceNode → output node"]
+```
+
+| Stage | Responsibility | Key file |
+| --- | --- | --- |
+| Interaction | Touch board, technique buttons, sliders; forwards intent only | `App/FretboardView.swift`, `App/PipaView.swift` |
+| Graph wiring | Audio session, source node format, render block factory | `Audio/AudioEngine.swift` |
+| Event queue | Lock-free SPSC ring buffer, sample-accurate scheduling | `Audio/AudioEngine.swift` (`PipaAudioCore`) |
+| String model | Digital waveguide, loop low-pass, all-pass fractional delay | `Core/PipaString.swift` |
+| Body | Five peaking resonances, commuted synthesis | `Core/PipaBody.swift` |
+| Four-string engine | Per-string timbre gradient, technique scheduling | `Core/PipaSynth.swift` |
+| Tuning table | Standard tuning, six xiang and twenty-five frets, pitch conversion | `Core/PipaTuning.swift` |
+
+## Core Features
+
+| Module | Description |
 | --- | --- |
-| 作者 | 吴泽荟（Zehui Wu） |
-| 学校 | 武汉康礼高级中学（Cogdel Cranleigh High School Wuhan） |
-| 年级 | G11（预计 2028 年 6 月毕业） |
-| 用途 | 本科申请作品集（CS + Music 交叉方向，CMU BCSA 等） |
-| 语言 | Swift 6（DSP 内核为纯 Swift，无第三方音频依赖） |
-| 平台 | iOS 17+，iPhone / iPad，基于 AVAudioEngine 实时渲染 |
+| Touch position board | 4 strings × 32 positions including the open string, with the real position markers of a Pipa soundboard. Tap any cell to sound it; drag horizontally to strum |
+| Technique buttons | Strum up (fu), strum down (sao), tremolo and damping, each triggering on the sample-accurate event queue |
+| Timbre and volume | Brightness slider moves the loop low-pass of all four strings; volume slider moves master gain. Both take effect on the next rendered sample |
+| Offline renderer | Command-line tool that verifies tuning across the whole range and writes the seven demo WAV pieces |
+| Real-time safety | Lock-free event queue, allocation-free render thread, deterministic excitation source |
 
-作者自幼学习 Pipa（琵琶）演奏，并取得专业级奖项。本项目源于一个真实矛盾：西方音乐学院（含 CMU 音乐学院）的试奏乐器名单里没有 Pipa，于是她选择在软件里把这件乐器重建出来——用计算的方法，让手机发出一把它自己的电子琵琶的声音。
+## Tech Stack
 
----
+- Swift 6 with SwiftUI for the interface; the DSP kernel is pure Swift with no third-party audio dependency
+- iOS 17 or later, iPhone and iPad, real-time rendering through `AVAudioEngine` and `AVAudioSourceNode`
+- `vDSP_conv` from the Accelerate framework for the commuted-synthesis convolution
+- 48 kHz preferred session rate; the source node follows the engine's real output format, and pitch is defined in Hz so any rate stays correct
+- The offline renderer is plain Swift compiled by hand with `swiftc`, outside the Xcode target
 
-## 技术路线：Karplus–Strong 拨弦合成
-
-核心是一根弦的**数字波导（digital waveguide）**模型，采用经典的 Karplus–Strong 拨弦合成算法：
-
-> 把一段经过塑形的噪声脉冲填入长度等于"一个基频周期"的延迟线，作为弦的初始位移；每个样本从延迟线末端读出、过一个环路低通、乘以环路增益后写回原处。高频每绕一圈损失更多能量，噪声逐渐收敛为乐音。**延迟线的长度决定音高，环路低通的系数决定音色与余音。**
-
-这正是用户指定的技术路线，也是整个 App 的声学骨架。
-
-### 引用
-
-- Karplus, K., & Strong, A. (1983). *Digital Synthesis of Plucked-String and Drum Timbres.* Computer Music Journal, 7(2), 43–55. —— 原始算法。
-- Jaffe, D. A., & Smith, J. O. (1983). *Extensions of the Karplus-Strong Plucked-String Algorithm.* Computer Music Journal, 7(2), 56–69. —— 提出用可调低通滤波器替代固定平均，从而控制音色，本项目环路低通的"亮度"参数即源于此。
-- Smith, J. O. *Physical Audio Signal Processing*（在线教材，CCRMA, Stanford）. —— 分数延迟全通、Commuted Synthesis 与环路增益物理上界的推导依据。
-
----
-
-## 技术贡献：朴素算法的三处修正
-
-朴素的 Karplus–Strong 在**中低音区**表现良好，但在琵琶这件乐器的**高品位（高音区）会"有波形、没音高"**——用 FFT 实测发现高音区只剩一团低频杂波。本项目没有停留在教科书实现，而是定位并修正了三个会让全音域失效的坑。这是本项目相对"套一个开源合成器"的真正技术含量所在。
-
-### 1. 环路低通的响应必须随基频缩放
-
-环路里的任何衰减都是按"**每绕一圈**"计的，而每秒绕的圈数就等于基频。同样的比例在 220 Hz 上无伤大雅，在 2349 Hz 上每秒复利两千多次，基频很快被抹平。
-
-- **修正**：环路低通截止频率不再固定，而是用二分法解出"在基频处幅度恰为指定增益"的系数（`solveLoopCoefficient`，`PipaString.swift`）。基频处的每圈能量保留比例由"亮度"参数统一决定，高音低音一致。
-- **附带约束**：每圈损失给定时，衰减 60 dB 的最长余音存在一个物理上限（`maximumDecay`）。超过它会让总环路增益大于 1 而自激，因此期望余音被夹在上限的 85% 内（`applyDecay`）。
-
-### 2. 分数延迟用一阶全通，不用线性插值
-
-延迟线长度不是整数时，朴素实现用**线性插值**补零头，但线性插值本身就是一个低通，它在基频处的衰减同样逃不过上面的"每秒复利"，把高音的基频能量偷走。
-
-- **修正**：改用一阶全通 `(a + z⁻¹)/(1 + a·z⁻¹)` 承担分数延迟部分（`solveAllpassCoefficient`）。全通幅度**恒等于 1**，只贡献相位延迟，不带来任何能量损失——这正是它能替代线性插值做分数延迟的原因。
-- 总延迟 = 延迟线整数部分 + 低通相位延迟 + 全通相位延迟，`actualFrequency` 直接由这条链路解析算出，用作全音域音准校验（不依赖任何信号分析，高音区也不会误判）。
-
-### 3. 激励必须严格零均值
-
-环路低通在**直流**处的增益恰好是 1，直流比基频衰减得慢几十倍。只要激励噪声的均值不为零，余音尾部就会塌缩成一团低频"哼声"。
-
-- **修正**：拨弦激励在填入延迟线后，先减去整体均值再归一化（`pluck`），保证直流被彻底剥离。
-
-### 4. 琴体共振与 Commuted Synthesis
-
-四根弦各自是一段数字波导，混合后再统一进入琴体滤波器组——真实乐器里四根弦耦合到同一个音箱，所以琴体只算一次。
-
-- 琴体用 5 个 peaking 滤波器逼近 Pipa 半梨形木箱的共振峰（空气腔、面板弯曲模式、高频亮度），决定"这是 Pipa 而不是吉他"的音色骨架（`PipaBody.swift`）。
-- 提供 **Commuted Synthesis**：先把极短的激励与琴体脉冲响应卷积一次（用 Accelerate 的 `vDSP_conv`），再用结果驱动弦模型，音色等效但计算量下降两三个数量级。琴体脉冲响应既可实测（用真实乐器的录音），也可由滤波器组合成兜底（`synthesizeImpulseResponse`）。
-- 支持用真实琴体的脉冲响应做 commuted synthesis，把合成音色从"塑料电子声"拉近到"像你那把琴"——这是作品集叙事里"把 Pipa 从才艺升级为技术作品"的关键一步。
-
-### 5. 实时音频工程约束
-
-`AudioEngine.swift` 把合成器接进 `AVAudioEngine`：主线程投"在哪一刻拨哪根弦"的事件，受锁保护的事件队列 `PipaAudioCore` 把事件精确排到样本时刻，渲染回调在实时线程上**零内存分配**（分配会触发内核锁、造成爆音）。界面层提供 4 弦 × 32 品指板、扫弦 / 轮指 / 推拉弦滑音 / 止音，以及亮度、音量滑块。
-
----
-
-## 演奏技法实现
-
-| 技法 | 实现 |
-| --- | --- |
-| 弹 / 挑 | 单弦拨弦，力度与右手拨弦位置（靠码 / 靠相）可调 |
-| 轮指 | 同一弦按样本时刻交错触发多根"虚拟指"，形成连续音流 |
-| 扫弦 | 一个事件在数毫秒内依次触发多根弦 |
-| 推拉弦滑音 | 只改延迟线长度不改音色（重算延迟、不动环路增益），音高平滑过渡而无音色跳变 |
-| 止音 | 延迟线整体乘 0.02，余音快速收掉 |
-
----
-
-## 验证结果
-
-DSP 内核经过离线渲染器（`Renderer/main.swift`）全音域校验：
-
-- 四根空弦：±0.2 音分
-- 全音域 128 个音位（4 弦 × 32 品）：解析法 0.00 音分
-- 高音区音频抽查（自相关 / FFT 双检）：±0.5 音分
-
-均远在人类听觉分辨极限（约 ±5 音分）之内。`PipaAudio/` 目录已生成 7 段 24-bit WAV 作品集素材：空弦、五声音阶、轮指、扫弦、推拉弦滑音、一段乐句、合成琴体脉冲响应。
-
-iOS 工程在 Xcode 27 / iPhone 17 Pro 模拟器上 `xcodebuild` 构建通过（BUILD SUCCEEDED，零错误）。
-
----
-
-## 工程结构
+## Project Structure
 
 ```
 ElectricPipa/
-├── Core/                  # 纯 Swift DSP 内核（无第三方依赖）
-│   ├── PipaTuning.swift   # 定弦 A–d–e–a、六相二十五品（32 音位）音高表
-│   ├── PipaString.swift   # 单弦数字波导模型（含上述三处修正）
-│   ├── PipaBody.swift     # 琴体共振峰 + Commuted Synthesis + Biquad
-│   ├── PipaSynth.swift    # 四弦引擎 + 扫弦/轮指/滑音调度
-│   └── WavFile.swift      # 24-bit WAV 读写
+├── Core/                     # Pure Swift DSP kernel, no third-party dependency
+│   ├── PipaTuning.swift      # Standard tuning, 6 xiang + 25 frets (32 positions), pitch conversion
+│   ├── PipaString.swift      # Single-string digital waveguide, with the three fixes
+│   ├── PipaBody.swift        # Body resonances, commuted synthesis, Biquad
+│   ├── PipaSynth.swift       # Four-string engine, strum and tremolo scheduling
+│   └── WavFile.swift         # 24-bit WAV reading and writing
 ├── Audio/
-│   └── AudioEngine.swift  # AVAudioEngine 实时渲染 + 样本精度事件队列
-├── App/                   # SwiftUI 界面
+│   └── AudioEngine.swift     # AVAudioEngine real-time rendering, lock-free event queue
+├── App/                      # SwiftUI interface
 │   ├── ElectricPipaApp.swift
-│   ├── PipaView.swift     # 主界面、技法按钮、亮度/音量滑块
-│   ├── FretboardView.swift# 4 弦 × 32 品可触摸指板、扫弦手势
+│   ├── PipaView.swift        # Main screen, technique buttons, brightness and volume
+│   ├── FretboardView.swift   # 4 strings × 32 positions touch board, strum gesture
 │   └── Info.plist
 ├── Renderer/
-│   └── main.swift         # 离线渲染器，生成作品集音频素材
-├── PipaAudio/             # 已生成的 7 段 WAV 素材
-└── ElectricPipa.xcodeproj # 标准 Xcode 工程（可直接 ⌘R 运行）
+│   └── main.swift            # Offline renderer, tuning verification, demo WAV output
+├── PipaAudio/                # Seven generated WAV pieces
+└── ElectricPipa.xcodeproj    # Standard Xcode project, runs with Cmd+R
 ```
 
+## How to Run
+
+**The app**
+
+1. Open `ElectricPipa.xcodeproj` with Xcode 15 or later.
+2. Pick an iPhone simulator or a real device and press Cmd+R.
+3. The first sound needs one user gesture, a tap on the board, because the audio session is configured as `.playback` and iOS requires it to start from a gesture.
+
+**The offline renderer**
+
+```
+xcrun swiftc -swift-version 6 -o PipaRenderer \
+  Renderer/main.swift Core/*.swift -framework Accelerate
+./PipaRenderer --out ./PipaAudio
+```
+
+It prints the tuning verification tables and writes the seven WAV pieces.
+
+> Note: the Bundle Identifier is still the placeholder `com.example.electricpipa`. Change it before debugging on a real device or shipping.
+
+## Version History
+
+Each round below was driven by something the previous round could not do. The first three rounds all ran into the same real-time crash, and the first two fixes turned out not to be the root cause; the third one was. The trail is kept in full because it shows how the fault was actually narrowed down.
+
+### v1.0 · First complete edition (2026-10-17)
+
+- Karplus-Strong digital waveguide with the three whole-range fixes, five-peak body model and commuted synthesis
+- Four-string engine with per-string timbre gradient, technique scheduling and push-pull bends
+- iOS app with a 4 × 32 touch board, technique buttons and brightness and volume sliders
+- Offline renderer with whole-range tuning verification: open strings ±0.2 cents, 128 positions 0.00 cents analytically, high register ±0.5 cents
+- 10 Swift files, seven 24-bit WAV demo pieces
+
+### v1.1 · Real-time thread safety (2026-10-17)
+
+- Triggering a sound crashed the audio thread with `AURemoteIO::IOThread: EXC_BREAKPOINT`. First hypothesis: the render callback broke real-time rules, with a per-frame heap allocation, an `NSLock` and a locking random source all on the IO thread
+- The event queue became a lock-free SPSC ring buffer with `OSMemoryBarrier()`, and every synth write, brightness and master gain included, moved onto the render thread so the main thread only queues intent
+- The pluck excitation moved from `Float.random` to an xorshift32 source: deterministic, no allocation, no locking
+- Verified with an independent DSP stress run of 510,000 samples across the whole range: zero NaN, zero crash. The crash survived, so this was hardening rather than the fix, but it is kept
+
+### v1.2 · Audio graph assembly (2026-10-17)
+
+- Second hypothesis: the graph itself. The source node was hard-wired to mono at 48 kHz and connected to the main mixer node, which on iOS 26 is a spatial mixer, so a sample-rate and channel converter sat between source and output and CoreAudio judged its input buffer list bogus
+- The session is now activated first, the real output format is read from `engine.outputNode.inputFormat(forBus: 0)`, the source node is built with that explicit format, and it connects straight to the output node. The DSP kernel is rebuilt at the real rate
+- Verified on macOS with a real `AVAudioEngine` and `AVAudioSourceNode`, which ran clean and ruled out the DSP algorithm as the cause. The crash survived this too, which finally pointed away from the graph
+
+### v1.3 · Swift 6 actor isolation, the actual cause (2026-10-17)
+
+- With the algorithm and the graph both cleared, the crash was reproduced in the sandbox: a UIKit probe app driving the project's own `AudioEngine.swift`, launched without a debugger so the crash landed on disk as an `.ips`
+- The backtrace ran through `libdispatch` and `libswift_Concurrency`, and disassembling the render closure showed it calling the lazy protocol witness accessor for `Swift.MainActor`. The closure, written inside the `@MainActor` start method, had inherited MainActor isolation, and `MainActor.assumeIsolated` trapped when CoreAudio called it from the IO thread
+- The render block is now built in a `nonisolated` static factory, free of any actor isolation. Verified end to end with the probe driving the project's own `AudioEngine.swift` through strum, single pluck, tremolo, bend and damping: zero crashes
+
+### v1.4 · English comments and bilingual README (2026-10-17)
+
+- All code comments moved to English, with the two crash-level findings from contribution 4 written up in the code
+- README rebuilt as English first with the full Chinese edition following, both covering the same sections
+
+## Known Limitations / To Be Improved
+
+- The five body resonances are hand-set estimates, not measurements. The planned next step is parameter identification: record the four open strings at three velocities on a real Pipa, measure the per-string 60 dB tail, the slope of the excitation spectrum and the body transfer function from the recordings, and write the results back into `PipaString` and `PipaBody`
+- The excitation is white noise shaped by a comb filter, which is where the remaining guitar-like colour comes from. A real nail pluck has a spectrum that falls with frequency, and that slope is one of the parameters the identification step will supply
+- The Bundle Identifier is still a placeholder
+- The brightness slider moves all four strings together; per-string brightness is already in the engine and only needs surfacing in the UI
+- Audio on the simulator works, but a real device is the better reference for how the tone sits
+
+## License
+
+Source code of a personal project; discussion and learning welcome.
+
 ---
 
-## 如何运行
+# 电子琵琶 · Electric Pipa
 
-1. 用 Xcode 打开 `ElectricPipa.xcodeproj`（Xcode 15+，推荐 27）。
-2. 选择 iPhone 模拟器或真机，⌘R 运行。
-3. 首次需有一次用户手势（点一下指板）才会启动音频会话（AVAudioSession 设为 `.playback`）。
+一款可在 iPhone / iPad 上弹奏的**物理建模合成**电子琵琶。所有声音都在手机本地、实时用数字波导算法算出来——不是在播放采样，是把琵琶这件乐器用代码重新造了一遍，一根弦一根弦地造，连琴体一起。
 
-> **注意**：Bundle Identifier 当前为占位值 `com.example.electricpipa`。真机调试或上架 App Store 前必须改成你自己的标识。
+> 个人项目 · 源于自己的习琴需要,在长期练习中持续打磨
+>
+> 开发者:吴泽荟（Zehui Wu）
+> 学校:武汉康礼高级中学（Wuhan Cogdel Cranleigh High School）
 
----
+我自幼学习琵琶演奏。软件乐器大多覆盖西方管弦,琵琶很少有用物理建模做的实现,于是我自己写了一个,顺带把自己这件乐器的声学原理弄明白。这个仓库就是这条探索线。
 
-## 许可证与声明
+## 本项目的技术贡献
 
-本项目为个人申请作品集用途，代码与音频素材可供学习与参考。Pipa（琵琶）定弦、品位与演奏技法参照真实乐器；声学模型为物理近似，非精确测量重建。
+### 贡献 1 · 以 Karplus-Strong 数字波导为声学骨架
+
+核心是一根弦的数字波导模型,采用经典的 Karplus-Strong 拨弦合成算法:
+
+> 把一段经过塑形的噪声填入长度恰好等于一个基频周期的延迟线,作为弦的初始位移;每个样本从延迟线末端读出、过一个环路低通、乘以环路增益后写回原处。高频每绕一圈损失更多能量,噪声逐渐收敛为乐音。**延迟线的长度决定音高,环路低通的系数决定音色与余音。**
+
+引用:
+
+- Karplus, K., & Strong, A. (1983). *Digital Synthesis of Plucked-String and Drum Timbres.* Computer Music Journal, 7(2), 43-55. 原始算法。
+- Jaffe, D. A., & Smith, J. O. (1983). *Extensions of the Karplus-Strong Plucked-String Algorithm.* Computer Music Journal, 7(2), 56-69. 提出用可调低通替代固定平均,本项目环路低通的「亮度」参数即源于此。
+- Smith, J. O. *Physical Audio Signal Processing*（在线教材,CCRMA, Stanford）。分数延迟全通、Commuted Synthesis 与环路增益物理上界的推导依据。
+
+### 贡献 2 · 让全音域都发得出声的三处修正
+
+朴素 Karplus-Strong 在中低音区表现良好,但在琵琶的高品位会「有波形、没音高」——FFT 实测高音区只剩一团低频杂波。本项目没有停留在教科书实现,而是定位并修正了三个会让全音域失效的坑。这是本项目真正的技术含量所在。
+
+**1. 环路低通的响应必须随基频缩放。**
+
+环路里的任何衰减都按「每绕一圈」计,而每秒绕的圈数就等于基频。同样比例在 220 Hz 上无伤大雅,在 2349 Hz 上每秒复利两千多次,基频瞬间归零。
+
+- 环路低通截止不再固定,而是用二分法解出「在基频处幅度恰为指定增益」的系数（`PipaString.swift` 的 `solveLoopCoefficient`）。基频处每圈能量保留比例由统一的「亮度」参数决定,高音低音一致。
+- 附带约束:每圈损失给定时,衰减 60 dB 的最长余音存在物理上限（`maximumDecay`）。超过它会让总环路增益大于 1 而自激,因此期望余音被夹在上限的 85% 内（`applyDecay`）。
+
+**2. 分数延迟用一阶全通,不用线性插值。**
+
+延迟线长度一般不是整数,朴素实现用线性插值补零头,但线性插值本身就是低通,它在基频处的衰减同样逃不过复利,把高音能量偷走。
+
+- 改用一阶全通 `(a + z⁻¹)/(1 + a·z⁻¹)` 承担分数延迟（`solveAllpassCoefficient`）。全通幅度恒等于 1,只贡献相位延迟,不带来任何能量损失——这正是它能替代线性插值的原因。
+- 总延迟 = 延迟线整数部分 + 低通相位延迟 + 全通相位延迟。`actualFrequency` 沿这条链路解析算出,用作全音域音准校验,不依赖任何信号分析,高音区也不会误判。
+
+**3. 激励必须严格零均值。**
+
+环路低通在直流处增益恰好为 1,直流比基频衰减慢几十倍。只要激励均值不为零,余音尾部就会塌缩成一团低频哼声。
+
+- 拨弦激励填入延迟线后先减去整体均值再归一化（`pluck`）,直流被彻底剥离。
+
+### 贡献 3 · 琴体共振与 Commuted Synthesis
+
+四根弦各自是一段数字波导,混合后再统一进入琴体滤波器组——真实乐器里四根弦耦合到同一个音箱,所以琴体只算一次。
+
+- 用 5 个 peaking 滤波器逼近半梨形木箱的共振峰（空气腔、面板弯曲模式、高频亮度）,构成「这是琵琶而不是吉他」的音色骨架（`PipaBody.swift`）。
+- 提供 Commuted Synthesis:把极短的激励与琴体脉冲响应用 Accelerate 的 `vDSP_conv` 卷积一次,再用结果驱动弦模型,音色等效但计算量下降两三个数量级。脉冲响应既可实测,也可由滤波器组合成兜底（`synthesizeImpulseResponse`）。
+- 换成实测脉冲响应是既定下一步,也是把音色从「塑料电子声」拉近到「像你那把琴」的关键。
+
+### 贡献 4 · 实时线程上的音频工程
+
+`AudioEngine.swift` 把合成器接进 `AVAudioEngine`。CoreAudio 要求实时回调不得分配内存、不得加锁、不得调用带锁随机源,渲染链路照此构建:
+
+- 事件队列是有界环形缓冲,用普通整数下标加 `OSMemoryBarrier()` 同步,主线程生产、渲染线程消费,全程无锁、零分配。
+- 所有对合成器的改写（含亮度与总增益）都只在渲染线程发生,主线程只投递演奏意图,顺带消除主/实时线程的数据竞争。
+- 激励噪声用 xorshift32 伪随机源,确定性、无分配、无锁。
+- 在 iOS 26 上把这条链路跑通的过程中,两个崩溃级发现已写进 `AudioEngine.swift` 的注释,因为每一个都花了整整一轮调试才定位:
+  - `AVAudioSourceNode` 的格式必须与引擎真实输出格式完全一致（采样率与声道数）,并直连 output node,绕开 iOS 26 默认装上的空间混音器;否则中间会被插入转换器,CoreAudio 内部断言直接崩掉实时线程（`CrashIfClientProvidedBogusAudioBufferList`）。
+  - 渲染块必须在 `nonisolated` 工厂里创建。直接写在 `@MainActor` 的 start 方法里,闭包会继承 MainActor 隔离,CoreAudio 从 IO 线程调用时 Swift 6 运行时直接 trap。
+
+### 贡献 5 · 技法建模与全音域音准校验
+
+- 建模的技法:单弦拨奏（力度与右手拨弦位置可调）、轮指、双向扫弦、推拉弦滑音、止音。
+- 音高以 Hz 定义,任何采样率下同一个音都准;滑音只重算延迟不动环路增益,音高过渡时音色不跳变。
+- 离线渲染器（`Renderer/main.swift`）做全音域校验:四空弦 ±0.2 音分、128 个音位解析法 0.00 音分、高音区自相关 ±0.5 音分,全部远在人耳可辨的约 ±5 音分之内。
+- `PipaAudio/` 收录渲染器写出的 7 段 24-bit WAV:空弦、五声音阶、轮指、扫弦、推拉弦滑音、一段乐句、合成琴体脉冲响应。
+
+## 系统架构
+
+信号链很短,每一级都在本机完成。主线程只转发意图,声音全部算在音频渲染线程上。
+
+```mermaid
+flowchart TB
+    subgraph MAIN ["主线程"]
+        U1["FretboardView<br/>4 弦 × 32 触摸音位"]
+        U2["PipaView<br/>技法按钮、明暗与音量"]
+        U3["AudioEngine (@MainActor)<br/>会话与音频图装配"]
+    end
+    subgraph AUDIO ["音频渲染线程"]
+        Q["SPSC 事件队列<br/>无锁、样本精度"]
+        S1["PipaString × 4<br/>数字波导"]
+        B["PipaBody<br/>五个共振峰"]
+        G["总增益"]
+    end
+    U1 --> U2
+    U2 --> U3
+    U3 -->|"只传意图"| Q
+    Q --> S1
+    S1 --> B
+    B --> G
+    G --> OUT["AVAudioSourceNode → output node"]
+```
+
+| 阶段 | 职责 | 关键文件 |
+| --- | --- | --- |
+| 交互 | 触摸指板、技法按钮、滑块,只转发意图 | `App/FretboardView.swift`、`App/PipaView.swift` |
+| 音频图装配 | 音频会话、源节点格式、渲染块工厂 | `Audio/AudioEngine.swift` |
+| 事件队列 | 无锁 SPSC 环形缓冲,样本精度调度 | `Audio/AudioEngine.swift`（`PipaAudioCore`） |
+| 弦模型 | 数字波导、环路低通、全通分数延迟 | `Core/PipaString.swift` |
+| 琴体 | 五个共振峰、Commuted Synthesis | `Core/PipaBody.swift` |
+| 四弦引擎 | 分弦音色梯度、技法调度 | `Core/PipaSynth.swift` |
+| 音位表 | 定弦、六相二十五品、音高换算 | `Core/PipaTuning.swift` |
+
+## 核心功能
+
+| 模块 | 说明 |
+| --- | --- |
+| 触摸指板 | 4 弦 × 32 音位（含空弦）,标记按真实琵琶面板位置;点格子发声,横向拖动触发扫弦 |
+| 技法按钮 | 拂弦、扫弦、轮指、止音,全部走样本精度事件队列 |
+| 音色与音量 | 明暗滑块统一移动四弦环路低通,音量滑块移动总增益,都在下一个渲染样本生效 |
+| 离线渲染器 | 命令行工具,做全音域音准校验并写出 7 段演示 WAV |
+| 实时安全 | 无锁事件队列、渲染线程零分配、确定性激励源 |
+
+## 技术栈
+
+- Swift 6,界面用 SwiftUI;DSP 内核纯 Swift,无第三方音频依赖
+- iOS 17 及以上,iPhone / iPad,经 `AVAudioEngine` 与 `AVAudioSourceNode` 实时渲染
+- Commuted Synthesis 的卷积用 Accelerate 框架的 `vDSP_conv`
+- 会话优先 48 kHz,源节点跟随引擎真实输出格式;音高以 Hz 定义,换采样率仍正确
+- 离线渲染器是纯 Swift,用 `swiftc` 手工编译,不在 Xcode target 里
+
+## 项目结构
+
+```
+ElectricPipa/
+├── Core/                     # 纯 Swift DSP 内核,无第三方依赖
+│   ├── PipaTuning.swift      # 定弦、六相二十五品（32 音位）、音高换算
+│   ├── PipaString.swift      # 单弦数字波导,含上述三处修正
+│   ├── PipaBody.swift        # 琴体共振峰、Commuted Synthesis、Biquad
+│   ├── PipaSynth.swift       # 四弦引擎、扫弦与轮指调度
+│   └── WavFile.swift         # 24-bit WAV 读写
+├── Audio/
+│   └── AudioEngine.swift     # AVAudioEngine 实时渲染、无锁事件队列
+├── App/                      # SwiftUI 界面
+│   ├── ElectricPipaApp.swift
+│   ├── PipaView.swift        # 主界面、技法按钮、明暗与音量
+│   ├── FretboardView.swift   # 4 弦 × 32 触摸指板、扫弦手势
+│   └── Info.plist
+├── Renderer/
+│   └── main.swift            # 离线渲染器、音准校验、演示 WAV 输出
+├── PipaAudio/                # 已生成的 7 段 WAV
+└── ElectricPipa.xcodeproj    # 标准 Xcode 工程,Cmd+R 即跑
+```
+
+## 运行方式
+
+**App**
+
+1. 用 Xcode 15 或更高版本打开 `ElectricPipa.xcodeproj`。
+2. 选 iPhone 模拟器或真机,Cmd+R 运行。
+3. 首次发声需要一次用户手势（点一下指板）——音频会话设为 `.playback`,iOS 要求它由手势启动。
+
+**离线渲染器**
+
+```
+xcrun swiftc -swift-version 6 -o PipaRenderer \
+  Renderer/main.swift Core/*.swift -framework Accelerate
+./PipaRenderer --out ./PipaAudio
+```
+
+会打印全音域音准校验表,并写出 7 段 WAV。
+
+> 注意:Bundle Identifier 仍是占位值 `com.example.electricpipa`,真机调试或上架前必须改。
+
+## 版本演进
+
+下面每一轮都由上一轮做不到的事情驱动。前三轮都在追同一个实时线程崩溃,前两轮修完都不是根因,第三轮才是。完整留痕是因为它能看出这个故障是怎么被一步步收窄的。
+
+### v1.0 · 首个完整版本（2026-10-17）
+
+- Karplus-Strong 数字波导 + 三处全音域修正 + 五峰琴体模型 + Commuted Synthesis
+- 四弦引擎带分弦音色梯度、技法调度与推拉弦滑音
+- iOS 应用:4 弦 × 32 触摸指板、技法按钮、明暗与音量滑块
+- 离线渲染器全音域校验:四空弦 ±0.2 音分、128 音位解析法 0.00 音分、高音区 ±0.5 音分
+- 10 个 Swift 文件、7 段 24-bit WAV 演示素材
+
+### v1.1 · 实时线程安全（2026-10-17）
+
+- 一触发声音音频线程就崩:`AURemoteIO::IOThread: EXC_BREAKPOINT`。第一假设是渲染回调违反实时规则:每帧堆分配、`NSLock` 加锁、带锁随机源全在 IO 线程上
+- 事件队列改为无锁 SPSC 环形缓冲加 `OSMemoryBarrier()`;所有合成器改写（含亮度与总增益）移到渲染线程,主线程只投递意图
+- 激励从 `Float.random` 换成 xorshift32:确定性、无分配、无锁
+- 独立 DSP 压力测试 51 万样本零 NaN 零崩溃。崩溃依旧,说明这一轮是加固而非修复,但改动全部保留
+
+### v1.2 · 音频图装配（2026-10-17）
+
+- 第二假设指向音频图:源节点被硬编码 mono / 48000 并接到 mainMixerNode,iOS 26 上它是空间混音器,源与输出之间被插入采样率/声道转换器,CoreAudio 判其输入缓冲区列表 bogus
+- 改为先激活会话,读 `engine.outputNode.inputFormat(forBus: 0)` 的真实格式,源节点用该显式格式构造并直连 output node,DSP 内核按真实采样率重建
+- 在 macOS 上用真实 `AVAudioEngine` + `AVAudioSourceNode` 复现验证,运行干净,排除 DSP 算法嫌疑。崩溃依旧,这才把矛头从音频图移开
+
+### v1.3 · Swift 6 actor 隔离,真正的根因（2026-10-17）
+
+- 算法与音频图都排除后,在沙箱内自建复现链:UIKit 探针 App 驱动本工程 `AudioEngine.swift` 本体,不带调试器启动,让崩溃正式落盘成 `.ips`
+- 回溯穿过 `libdispatch` 与 `libswift_Concurrency`;反汇编渲染闭包,看到它调用 `Swift.MainActor` 的 lazy witness 访问器——写在 `@MainActor` start 方法里的闭包继承了 MainActor 隔离,CoreAudio 从 IO 线程调用时 `assumeIsolated` 检查失败直接 trap
+- 渲染块改由 `nonisolated` 静态工厂创建,不带任何 actor 隔离。端到端探针驱动本工程 `AudioEngine.swift`,扫弦/单音/轮指/推弦/止音全部通过,零崩溃
+
+### v1.4 · 注释英文化与双语 README（2026-10-17）
+
+- 全部代码注释改为英文,贡献 4 的两个崩溃级发现写进代码注释
+- README 重构为英文完整版在前、中文完整版在后,两版覆盖相同章节
+
+## 已知限制 / 待改进
+
+- 五个琴体共振峰是手拍估值,不是实测。既定下一步是参数辨识:在真实琵琶上录四根空弦 × 三档力度,从录音测每弦 60 dB 余音、激励谱下降斜率、琴体传递函数,写回 `PipaString` 与 `PipaBody`
+- 激励是白噪加梳状滤波,剩下的「吉他味」主要来自这里。真实义甲拨弦的频谱随频率下降,这条斜率正是辨识要测的参数之一
+- Bundle Identifier 仍是占位值
+- 明暗滑块统一移动四根弦;分弦亮度引擎里已经有,只需在界面上暴露
+- 模拟器上音频可用,但音色落位以真机为更可靠的参考
+
+## 许可证
+
+个人项目源码,欢迎交流与学习。

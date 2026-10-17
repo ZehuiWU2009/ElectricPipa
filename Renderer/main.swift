@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 命令行入口
+// MARK: - Command-line entry
 
 let arguments = CommandLine.arguments
 let sampleRate: Double = 48000
@@ -20,20 +20,23 @@ print("Pipa 物理建模合成器  |  采样率 \(Int(sampleRate)) Hz")
 print("输出目录：\(outputDir.path)")
 print("")
 
-// MARK: - 音高校验
+// MARK: - Pitch verification
 
-/// 用归一化自相关估计基频，并在峰值处做抛物线插值取得亚样本精度。
-/// 搜索范围限定在期望音高附近，这是校验而不是盲检测，可以避开八度误判。
+/// Estimate the fundamental with normalised autocorrelation and refine it to
+/// sub-sample accuracy with parabolic interpolation at the peak. The search is
+/// confined to a neighbourhood of the expected pitch: this is a verification
+/// rather than a blind detection, which keeps octave errors away.
 func detectPitch(_ samples: [Float], sampleRate: Double, expected: Double) -> (pitch: Double, score: Float) {
     let minLag = max(2, Int(sampleRate / (expected * 1.3)))
     let maxLag = min(samples.count / 2, Int(sampleRate / (expected * 0.75)))
 
-    // 跳过起音，取持续段来做估计。
+    // Skip the attack and estimate on the sustained stretch.
     let start = min(samples.count / 5, samples.count / 2)
     let length = min(samples.count - start, 16384)
     guard length > maxLag * 2 else { return (0, 0) }
 
-    // 先看这一段到底有没有声音，静音上做自相关只会得到噪声。
+    // First check whether this stretch has any sound at all; autocorrelation on
+    // silence only yields noise.
     var peakAmplitude: Float = 0
     for i in 0..<length {
         peakAmplitude = max(peakAmplitude, abs(samples[start + i]))
@@ -64,7 +67,8 @@ func detectPitch(_ samples: [Float], sampleRate: Double, expected: Double) -> (p
 
     guard bestLag > 1, bestScore > 0.2 else { return (0, bestScore) }
 
-    // 在最佳延迟的左右两点上做抛物线插值，细化周期估计。
+    // Parabolic interpolation on the two neighbours of the best lag refines the
+    // period estimate.
     func correlation(at lag: Int) -> Float {
         var dot: Float = 0
         for i in 0..<length {
@@ -77,7 +81,8 @@ func detectPitch(_ samples: [Float], sampleRate: Double, expected: Double) -> (p
     let right = correlation(at: bestLag + 1)
     let denominator = left - 2 * center + right
     var refined = Double(bestLag)
-    // 分母趋零时插值会发散，只接受小于一个样本的修正。
+    // When the denominator approaches zero the interpolation blows up, so only
+    // corrections smaller than one sample are accepted.
     if abs(denominator) > 1e-6 {
         let correction = Double(0.5 * (left - right) / denominator)
         if abs(correction) < 1.0 { refined += correction }
@@ -85,7 +90,7 @@ func detectPitch(_ samples: [Float], sampleRate: Double, expected: Double) -> (p
     return (sampleRate / refined, bestScore)
 }
 
-/// 渲染一次拨弦的样本，返回整段波形。
+/// Render one pluck and return the whole waveform.
 func renderPluck(string: Int, fret: Int, seconds: Double) -> [Float] {
     Scheduler.shared.reset()
     let synth = PipaSynth(sampleRate: sampleRate)
@@ -96,7 +101,7 @@ func renderPluck(string: Int, fret: Int, seconds: Double) -> [Float] {
     return output
 }
 
-/// 测量衰减到 -40 dB 所需时间。
+/// Measure the time it takes to decay to -40 dB.
 func decayTime(_ samples: [Float], sampleRate: Double) -> Double {
     var peak: Float = 0
     for value in samples { peak = max(peak, abs(value)) }
@@ -127,7 +132,8 @@ for string in 0..<PipaSynth.stringCount {
 print(tuningPassed ? "✅ 四根空弦音高全部在 ±10 音分内" : "⚠️ 存在超过 10 音分的偏差")
 print("")
 
-// 解析法校验全音域：128 个音位全部检查，不受信号分析误差影响。
+// Analytic check across the whole range: all 128 positions, free of
+// signal-analysis error.
 print("── 全音域音准校验（解析法，4 弦 × 32 音位 = 128 个音）──")
 let verificationSynth = PipaSynth(sampleRate: sampleRate)
 var worstCent: Double = 0
@@ -160,7 +166,8 @@ print(String(format: "共 %d 个音位，最大偏差 %+.2f cents（%@）", tota
 print(analyticFailures == 0 ? "✅ 全部 128 个音位都在 ±5 音分内（人耳分辨不出）" : "⚠️ 有 \(analyticFailures) 个音位超出 ±5 音分")
 print("")
 
-// 音频级抽查：解析法只保证延迟线算得对，这里确认高音区真的发得出声、音也准。
+// Audio-level spot check: the analytic method only proves the delay line is
+// computed correctly; this confirms the high register really sounds, and in tune.
 print("── 音频级抽查（高音区，自相关）──")
 for fret in [6, 12, 18, 24, 31] {
     let expected = PipaTuning.frequency(string: 3, fret: fret)
@@ -174,10 +181,10 @@ for fret in [6, 12, 18, 24, 31] {
 }
 print("")
 
-// MARK: - 演示片段
+// MARK: - Demo pieces
 
 func write(_ samples: [Float], named name: String) {
-    // 峰值为 0.9 左右归一化，留出余量避免削波。
+    // Normalise to a peak around 0.9, leaving headroom against clipping.
     var peak: Float = 0
     for value in samples { peak = max(peak, abs(value)) }
     var normalized = samples
@@ -201,7 +208,7 @@ struct Note {
     var velocity: Double = 0.85
 }
 
-/// 按事件表渲染一段演奏。
+/// Render a performance from an event table.
 func renderNotes(_ notes: [Note], tail: Double = 1.8) -> [Float] {
     Scheduler.shared.reset()
     let synth = PipaSynth(sampleRate: sampleRate)
@@ -231,14 +238,14 @@ func renderNotes(_ notes: [Note], tail: Double = 1.8) -> [Float] {
 
 print("── 演示片段 ──")
 
-// 1. 四根空弦依次拨响。
+// 1. The four open strings in turn.
 var openStringNotes: [Note] = []
 for index in 0..<PipaSynth.stringCount {
     openStringNotes.append(Note(time: Double(index) * 0.9, string: index, fret: 0, velocity: 0.9))
 }
 write(renderNotes(openStringNotes), named: "01_open_strings.wav")
 
-// 2. 子弦上的五声音阶，D 调，对应 Pipa 的正调音阶。
+// 2. A pentatonic scale on the Zi string, D mode, matching the zheng diao scale of the Pipa.
 var scaleNotes: [Note] = []
 let pentatonicFrets = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21]
 for (index, fret) in pentatonicFrets.enumerated() {
@@ -246,7 +253,7 @@ for (index, fret) in pentatonicFrets.enumerated() {
 }
 write(renderNotes(scaleNotes), named: "02_scale.wav")
 
-// 3. 轮指：子弦空弦上每秒 9 下，持续 2 秒。
+// 3. Tremolo: nine plucks a second on the open Zi string, two seconds long.
 Scheduler.shared.reset()
 let tremoloSynth = PipaSynth(sampleRate: sampleRate)
 tremoloSynth.tremolo(string: 3, fret: 7, rate: 9, duration: 2.0, velocity: 0.5)
@@ -254,7 +261,7 @@ var tremolo = [Float](repeating: 0, count: Int(3.4 * sampleRate))
 tremoloSynth.render(into: &tremolo, count: tremolo.count)
 write(tremolo, named: "03_tremolo.wav")
 
-// 4. 扫弦：拂与扫各一次。
+// 4. Strum: one fu and one sao.
 Scheduler.shared.reset()
 let strumSynth = PipaSynth(sampleRate: sampleRate)
 strumSynth.strum(ascending: true, velocity: 0.85)
@@ -262,7 +269,7 @@ var strum = [Float](repeating: 0, count: Int(3.0 * sampleRate))
 strumSynth.render(into: &strum, count: strum.count)
 write(strum, named: "04_strum.wav")
 
-// 5. 推拉弦滑音：在子弦上把音高连续推高再放回。
+// 5. Push-pull slide: glide the pitch up a whole tone on the Zi string and let it fall back.
 Scheduler.shared.reset()
 let slideSynth = PipaSynth(sampleRate: sampleRate)
 let startFrequency = PipaTuning.frequency(string: 3, fret: 5)
@@ -271,7 +278,7 @@ var slide = [Float](repeating: 0, count: slideSamples)
 slideSynth.pluckFrequency(string: 3, frequency: startFrequency, velocity: 0.9)
 for index in 0..<slideSamples {
     let time = Double(index) / sampleRate
-    // 前 0.9 秒推高一个全音，之后缓慢回落。
+    // Push up a whole tone over the first 0.9 s, then fall back slowly.
     var semitones: Double = 0
     if time < 0.9 {
         semitones = 2.0 * (time / 0.9)
@@ -284,14 +291,14 @@ for index in 0..<slideSamples {
 }
 write(slide, named: "05_slide.wav")
 
-// 6. 一段乐句：五声音阶上行 + 轮指长音 + 下行收尾。
+// 6. A short phrase: pentatonic ascent, a tremolo long note, then a descent to close.
 var phrase: [Note] = []
 var time: Double = 0
 for fret in [0, 2, 4, 7, 9] {
     phrase.append(Note(time: time, string: 3, fret: fret, velocity: 0.85))
     time += 0.28
 }
-phrase.append(Note(time: time, string: 0, fret: 0, velocity: 0.7))   // 缠弦空弦衬托
+phrase.append(Note(time: time, string: 0, fret: 0, velocity: 0.7))   // Open Chan string underneath
 time += 0.5
 for fret in [12, 9, 7, 4, 2, 0] {
     phrase.append(Note(time: time, string: 3, fret: fret, velocity: 0.8))
@@ -300,7 +307,8 @@ for fret in [12, 9, 7, 4, 2, 0] {
 phrase.append(Note(time: time + 0.3, string: 1, fret: 0, velocity: 0.75))
 write(renderNotes(phrase, tail: 2.5), named: "06_phrase.wav")
 
-// 7. 与实测脉冲响应的对比说明：没有 IR 时使用合成响应，这里输出一份合成 IR 供参考。
+// 7. A note on comparing against a measured impulse response: with no measured
+// IR available, a synthesised one is used, and a copy is written out for reference.
 let syntheticIR = PipaBody.synthesizeImpulseResponse(sampleRate: sampleRate)
 write(syntheticIR, named: "07_synthetic_body_ir.wav")
 
