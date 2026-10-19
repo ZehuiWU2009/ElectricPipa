@@ -75,7 +75,7 @@ The four strings are separate digital waveguides. They are mixed and then fed th
 
 ### Contribution 5 · Technique modelling and whole-range tuning verification
 
-- Techniques modelled: single pluck with adjustable velocity and right-hand position, tremolo, strum in both directions, push-pull pitch bends, and damping.
+- Techniques modelled: single pluck with adjustable velocity and right-hand position, tremolo, strum in both directions, tan-tiao (弹挑, a quick outward then inward strike on one string), push-pull pitch bends, and damping.
 - Pitch is defined in Hz, so the same note is correct at any sample rate; bends only recompute the delay and leave the timbre alone, so the tone does not jump while the pitch glides.
 - The offline renderer (`Renderer/main.swift`) verifies tuning across the whole range: open strings within ±0.2 cents, all 128 positions within 0.00 cents by the analytic method, and the high register within ±0.5 cents under autocorrelation. All far inside the roughly ±5 cents a human ear can resolve.
 - `PipaAudio/` carries seven 24-bit WAV pieces written by the renderer: open strings, a pentatonic scale, tremolo, strum, a push-pull slide, a short phrase, and the synthesised body impulse response.
@@ -136,7 +136,7 @@ flowchart TB
 | Module | Description |
 | --- | --- |
 | Instrument panel | A vector-drawn Pipa: half-pear soundboard with wood grain, four strings with sag, six xiang, twenty-five frets, bridge and pegs. Touch anywhere near a string and the nearest stop sounds | `App/FretboardView.swift`, `App/PipaGeometry.swift` |
-| Technique buttons | Strum up (fu), strum down (sao), tremolo and damping, each triggering on the sample-accurate event queue |
+| Technique buttons | Strum up (fu), strum down (sao), tremolo (lun), tan-tiao (弹挑) and damping, each triggering on the sample-accurate event queue |
 | Timbre and volume | Brightness slider moves the loop low-pass of all four strings; volume slider moves master gain. Both take effect on the next rendered sample |
 | Offline renderer | Command-line tool that verifies tuning across the whole range and writes the seven demo WAV pieces |
 | Real-time safety | Lock-free event queue, allocation-free render thread, deterministic excitation source |
@@ -242,6 +242,12 @@ Each round below was driven by something the previous round could not do. The fi
 - The plucked string shimmers, the stop position lights up, and a sideways drag across the strings still strums. The header shows the current stop as string, position and note name
 - New `App/PipaGeometry.swift` holds the panel geometry and hit testing; type-checked against the iOS simulator SDK in the sandbox, and the two UI views verified through macro-stubbed copies since SwiftUI macros cannot expand in the sandbox
 
+### v1.7 · Animated strings and the tan-tiao stroke (2026-10-19)
+
+- Every string now carries a live vibration animation: a decaying envelope times a fast oscillation phase, drawn as a swinging curve whose mid-point swings sideways and settles, so plucking a stop position visibly rings the string.
+- Strum (fu/sao) and tremolo (lun) animate the strings in sequence or in a sustained ring, matching the audio order and spacing. A sideways drag across the strings triggers the same animation through the new `onStrum` callback.
+- Added tan-tiao (弹挑): one string struck twice in quick succession, first outward then inward about 85 ms apart, with the string visibly snapping back and forth. `AudioEngine.tanTiao` schedules the two plucks with slightly different right-hand positions, and a new 弹挑 button drives both the sound and the reversed animation.
+
 ## Known Limitations / To Be Improved
 
 - The five body resonances are hand-set estimates, not measurements. The planned next step is differentiable parameter identification: port the same Karplus-Strong core to PyTorch or JAX and fit the per-string 60 dB tail, the slope of the excitation spectrum and the body transfer function by gradient descent from recordings of the four open strings at three velocities, then write the results back into `PipaString` and `PipaBody`
@@ -326,7 +332,7 @@ Source code of a personal project; discussion and learning welcome.
 
 ### 贡献 5 · 技法建模与全音域音准校验
 
-- 建模的技法:单弦拨奏（力度与右手拨弦位置可调）、轮指、双向扫弦、推拉弦滑音、止音。
+- 建模的技法:单弦拨奏（力度与右手拨弦位置可调）、轮指、双向扫弦、弹挑（单弦先向外拨再向内挑的快速两下）、推拉弦滑音、止音。
 - 音高以 Hz 定义,任何采样率下同一个音都准;滑音只重算延迟不动环路增益,音高过渡时音色不跳变。
 - 离线渲染器（`Renderer/main.swift`）做全音域校验:四空弦 ±0.2 音分、128 个音位解析法 0.00 音分、高音区自相关 ±0.5 音分,全部远在人耳可辨的约 ±5 音分之内。
 - `PipaAudio/` 收录渲染器写出的 7 段 24-bit WAV:空弦、五声音阶、轮指、扫弦、推拉弦滑音、一段乐句、合成琴体脉冲响应。
@@ -387,7 +393,7 @@ flowchart TB
 | 模块 | 说明 |
 | --- | --- |
 | 琵琶面板 | 矢量绘制的整琴:半梨形琴身带木纹、四根带垂度的弦、六相二十五品、覆手与轸子。弦附近任意位置按下,最近音位发声 | `App/FretboardView.swift`、`App/PipaGeometry.swift` |
-| 技法按钮 | 拂弦、扫弦、轮指、止音,全部走样本精度事件队列 |
+| 技法按钮 | 拂弦、扫弦、轮指、弹挑、止音,全部走样本精度事件队列 |
 | 音色与音量 | 明暗滑块统一移动四弦环路低通,音量滑块移动总增益,都在下一个渲染样本生效 |
 | 离线渲染器 | 命令行工具,做全音域音准校验并写出 7 段演示 WAV |
 | 实时安全 | 无锁事件队列、渲染线程零分配、确定性激励源 |
@@ -492,6 +498,12 @@ xcrun swiftc -swift-version 6 -o PipaRenderer \
 - 音位按空弦弦长的 2^(-n/12) 排布,与真实乐器一致。弦附近任意位置按下即发最近音位的声,且落点沿弦的位置成为拨弦激励点——音色跟着手指落点走
 - 被拨的弦会振动,音位会点亮,横向拂过四弦仍然是扫弦;顶部信息栏显示当前音位为「弦名 · 相品 · 音名」
 - 新增 `App/PipaGeometry.swift` 承载面板几何与命中测试,已在沙箱内经 iOS 模拟器 SDK 类型检查;两个视图文件因沙箱内 SwiftUI 宏无法展开,改用宏替身副本完成验证
+
+### v1.7 · 琴弦动画与弹挑指法（2026-10-19）
+
+- 每根弦现在都有实时振动动画:一个衰减包络乘以一段高频振荡相位,画成中段左右摆动并逐渐平息的曲线,拨响一个音位就看得弦在响。
+- 扫弦（拂/扫）和轮指按音频顺序与间隔依次或持续摆动琴弦;横向拂过四弦经由新增的 `onStrum` 回调触发同样的动画。
+- 新增弹挑:单弦快速两下,先向外拨再向内挑,间隔约 85 毫秒,弦可见地来回弹动。`AudioEngine.tanTiao` 用略不同的右手拨弦位置排布两次拨弦,新的「弹挑」按钮同时驱动声音与反向动画。
 
 ## 已知限制 / 待改进
 

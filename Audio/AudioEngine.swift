@@ -162,6 +162,13 @@ final class PipaAudioCore: @unchecked Sendable {
         schedule(.damp(string: string), atOffset: 0)
     }
 
+    /// Tan-Tiao (弹挑): one string struck twice in quick succession, first
+    /// outward (tan, brighter), then inward (tiao, darker), about 85 ms apart.
+    func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5) {
+        schedule(.pluck(string: string, fret: fret, velocity: velocity, position: min(0.92, position + 0.12)), atOffset: 0)
+        schedule(.pluck(string: string, fret: fret, velocity: velocity * 0.9, position: max(0.08, position - 0.12)), atOffset: 0.085)
+    }
+
     func dampAll() {
         schedule(.dampAll, atOffset: 0)
     }
@@ -294,6 +301,12 @@ final class AudioEngine: ObservableObject {
 
     func damp(string: Int) {
         core?.damp(string: string)
+    }
+
+    /// Tan-Tiao (弹挑): the string is struck twice, outward then inward.
+    func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5) {
+        ensureStarted()
+        core.tanTiao(string: string, fret: fret, velocity: velocity, position: position)
     }
 
     func dampAll() {

@@ -10,26 +10,39 @@ import SwiftUI
 /// Touch the board anywhere near a string and the nearest stop position
 /// sounds, so the finger lands where the note is rather than on a grid cell.
 /// Drag sideways across the strings to strum.
+///
+/// The four strings carry a live vibration animation: every time a string is
+/// plucked or swept the panel sets the matching entries of `stringVib`,
+/// `stringSwing` and `stringDir`, and `strings(in:)` redraws each string as a
+/// vibrating curve whose mid-point swings sideways and decays.
 struct PipaBoardView: View {
     @EnvironmentObject private var audio: AudioEngine
 
     @Binding var selection: (string: Int, fret: Int)
     @Binding var litCell: (string: Int, fret: Int)?
 
+    /// Vibration state for each string, owned by the parent and shared here so
+    /// that both finger taps and the technique buttons animate the same strings.
+    @Binding var stringVib: [CGFloat]
+    @Binding var stringSwing: [CGFloat]
+    @Binding var stringDir: [Double]
+
     /// Called with the string, the stop position and the excitation point
     /// along the string, so the pluck position follows the finger.
     let onPluck: (Int, Int, Double) -> Void
+    /// Called when the user sweeps across the strings; the Bool is the sweep
+    /// direction (true = left to right).
+    let onStrum: (Bool) -> Void
 
     /// The stop position currently under the finger, highlighted while
     /// pressing and before the sound is committed.
     @State private var pressing: (string: Int, fret: Int)? = nil
-    /// Which string is ringing, for the vibration shimmer.
-    @State private var shimmerString: Int? = nil
-    @State private var shimmerOffset: CGFloat = 0
 
     /// String gauges and sags: the Chan string is thickest and sags most.
     private let stringWidth: [CGFloat] = [2.6, 2.1, 1.6, 1.1]
     private let stringSag: [CGFloat] = [2.8, 2.2, 1.7, 1.2]
+    /// How far the mid-point of a string swings at full amplitude.
+    private let swingAmplitude: CGFloat = 8
 
     private let woodLight = Color(red: 0.46, green: 0.25, blue: 0.14)
     private let woodMid = Color(red: 0.34, green: 0.17, blue: 0.09)
@@ -64,23 +77,10 @@ struct PipaBoardView: View {
                                         PipaGeometry.pluckPosition(value.location, in: rect))
                             }
                         } else if abs(translation.width) > abs(translation.height) {
-                            audio.strum(ascending: translation.width > 0)
+                            onStrum(translation.width > 0)
                         }
                     }
             )
-            // A labelled tuple is not Equatable, so watch a string key of it.
-            .onChange(of: litCell.map { "\($0.string)-\($0.fret)" }) { _, _ in
-                guard let hit = litCell else { return }
-                shimmerString = hit.string
-                shimmerOffset = 0
-                withAnimation(.linear(duration: 0.055).repeatCount(6, autoreverses: true)) {
-                    shimmerOffset = 1.4
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    shimmerString = nil
-                    shimmerOffset = 0
-                }
-            }
         }
     }
 
@@ -169,15 +169,28 @@ struct PipaBoardView: View {
         return ForEach(0..<PipaGeometry.stringCount, id: \.self) { string in
             let x = PipaGeometry.stringX(string, in: rect)
             let sag = stringSag[string]
+            let vib = stringVib[string]
+            let swing = stringSwing[string]
+            let dir = stringDir[string]
             Path { path in
-                path.move(to: CGPoint(x: x, y: nutY))
-                path.addQuadCurve(to: CGPoint(x: x, y: bridgeY),
-                                  control: CGPoint(x: x + sag, y: (nutY + bridgeY) / 2))
+                let segments = 26
+                for i in 0...segments {
+                    let t = Double(i) / Double(segments)
+                    let y = nutY + (bridgeY - nutY) * t
+                    // Fixed ends, largest swing at the middle of the string.
+                    let envelope = sin(.pi * t)
+                    let displacement = sag + vib * dir * swingAmplitude * envelope * sin(swing * .pi)
+                    let px = x + displacement
+                    if i == 0 {
+                        path.move(to: CGPoint(x: px, y: y))
+                    } else {
+                        path.addLine(to: CGPoint(x: px, y: y))
+                    }
+                }
             }
             .stroke(LinearGradient(colors: [stringLight, stringDark],
                                    startPoint: .top, endPoint: .bottom),
                     lineWidth: stringWidth[string])
-            .offset(x: shimmerString == string ? shimmerOffset : 0)
         }
     }
 
@@ -210,7 +223,10 @@ struct PipaBoardView: View {
 
 struct PipaBoardView_Previews: PreviewProvider {
     static var previews: some View {
-        PipaBoardView(selection: .constant((3, 7)), litCell: .constant(nil)) { _, _, _ in }
+        PipaBoardView(selection: .constant((3, 7)), litCell: .constant(nil),
+                      stringVib: .constant([0, 0, 0, 0]),
+                      stringSwing: .constant([0, 0, 0, 0]),
+                      stringDir: .constant([1, 1, 1, 1])) { _, _, _ in }
             .environmentObject(AudioEngine())
             .preferredColorScheme(.dark)
     }
