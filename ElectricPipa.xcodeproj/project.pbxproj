@@ -14,6 +14,7 @@
 		C2440850858041CEB7052C83 /* ElectricPipaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03EDC09128B345BAA0850B7E /* ElectricPipaApp.swift */; };
 		A74AB7EE37EB4FDDA52466AC /* PipaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7892EBFB8AE2443E850BC230 /* PipaView.swift */; };
 		90DB97F889D94FD4934628A1 /* FretboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9A9329E73945E8B2FFD698 /* FretboardView.swift */; };
+		0CD3CFEA6EC04042BBC70A29 /* PipaGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6635CEBCB09542E49F0226BA /* PipaGeometry.swift */; };
 		F6D4FE87D8CD4C6C9921ACD8 /* PipaTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaTuning.swift; sourceTree = "<group>"; };
 		64B5682BBFA94D2EA1CD21C2 /* PipaString.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaString.swift; sourceTree = "<group>"; };
 		520D5ED709B5433F90CA53F1 /* PipaBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaBody.swift; sourceTree = "<group>"; };
@@ -23,6 +24,7 @@
 		03EDC09128B345BAA0850B7E /* ElectricPipaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElectricPipaApp.swift; sourceTree = "<group>"; };
 		7892EBFB8AE2443E850BC230 /* PipaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaView.swift; sourceTree = "<group>"; };
 		DA9A9329E73945E8B2FFD698 /* FretboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FretboardView.swift; sourceTree = "<group>"; };
+		6635CEBCB09542E49F0226BA /* PipaGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaGeometry.swift; sourceTree = "<group>"; };
 		DB164EA7642945D693A8CDC4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E5EBC9F1DF7046AA9CBC7C6E /* ElectricPipa.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ElectricPipa.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C737D15AAD24D999D889E85 /* Frameworks */ = {
@@ -52,6 +54,7 @@
 				C2440850858041CEB7052C83 /* ElectricPipaApp.swift in Sources */,
 				A74AB7EE37EB4FDDA52466AC /* PipaView.swift in Sources */,
 				90DB97F889D94FD4934628A1 /* FretboardView.swift in Sources */,
+				0CD3CFEA6EC04042BBC70A29 /* PipaGeometry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +84,7 @@
 				03EDC09128B345BAA0850B7E,
 				7892EBFB8AE2443E850BC230,
 				DA9A9329E73945E8B2FFD698,
+				6635CEBCB09542E49F0226BA,
 				DB164EA7642945D693A8CDC4,
 			);
 			path = App;

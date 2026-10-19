@@ -1,35 +1,37 @@
 import SwiftUI
 
-/// Main screen of the electric Pipa: string names on the left, a scrollable
-/// position board on the right, and a row of technique buttons plus timbre
-/// sliders below.
+/// Main screen of the electric Pipa: the instrument panel in the middle, a
+/// row of technique buttons and timbre sliders below.
 struct PipaView: View {
     @EnvironmentObject private var audio: AudioEngine
 
     /// Currently selected string and position; tremolo and damping act on it.
     @State private var selection: (string: Int, fret: Int) = (3, 7)
-    /// The cell just plucked, used for the highlight animation.
+    /// The position just plucked, used for the highlight animation.
     @State private var litCell: (string: Int, fret: Int)? = nil
 
-    private let stringNames = ["缠弦", "老弦", "中弦", "子弦"]
-
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             header
-            FretboardView(selection: $selection, litCell: $litCell, onPluck: play)
-            Divider().overlay(Color.white.opacity(0.15))
+            PipaBoardView(selection: $selection, litCell: $litCell) { string, fret, position in
+                play(string: string, fret: fret, position: position)
+            }
             techniqueButtons
-            Divider().overlay(Color.white.opacity(0.15))
             sliders
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
-        .background(Color(.sRGB, red: 0.07, green: 0.07, blue: 0.09, opacity: 1).ignoresSafeArea())
+        .background(
+            LinearGradient(colors: [Color(red: 0.09, green: 0.08, blue: 0.10),
+                                    Color(red: 0.05, green: 0.04, blue: 0.06)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        )
     }
 
     private var header: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("电子琵琶")
                     .font(.title2.bold())
@@ -39,15 +41,26 @@ struct PipaView: View {
                     .foregroundColor(.white.opacity(0.55))
             }
             Spacer()
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(audio.isRunning ? Color.green : Color.gray)
-                    .frame(width: 9, height: 9)
-                Text(audio.isRunning ? "音频已启动" : "轻触指板开始")
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(currentNoteDescription)
+                    .font(.subheadline.bold())
+                    .foregroundColor(.orange)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(audio.isRunning ? Color.green : Color.gray)
+                        .frame(width: 9, height: 9)
+                    Text(audio.isRunning ? "音频已启动" : "轻触琴弦开始")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.6))
+                }
             }
         }
+    }
+
+    /// "子弦 · 品12 · E5" for the current selection.
+    private var currentNoteDescription: String {
+        let midi = PipaTuning.midi(string: selection.string, fret: selection.fret)
+        return "\(PipaTuning.stringNames[selection.string]) · \(PipaTuning.positionName(selection.fret)) · \(PipaTuning.noteName(midi))"
     }
 
     private var techniqueButtons: some View {
@@ -69,8 +82,13 @@ struct PipaView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Color(.sRGB, red: 0.20, green: 0.22, blue: 0.32, opacity: 1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        )
                 )
         }
+        .buttonStyle(.plain)
     }
 
     private var sliders: some View {
@@ -92,10 +110,11 @@ struct PipaView: View {
         }
     }
 
-    /// Trigger one pluck from the main thread and light the matching cell for
-    /// the animation.
-    private func play(string: Int, fret: Int) {
-        audio.pluck(string: string, fret: fret)
+    /// Trigger one pluck from the main thread and light the matching position
+    /// for the animation. The excitation point follows the finger position on
+    /// the string.
+    private func play(string: Int, fret: Int, position: Double) {
+        audio.pluck(string: string, fret: fret, velocity: 0.85, position: position)
         selection = (string, fret)
         litCell = (string, fret)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {

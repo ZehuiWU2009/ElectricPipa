@@ -102,7 +102,7 @@ The signal path is short and every stage is on device. The main thread only forw
 ```mermaid
 flowchart TB
     subgraph MAIN ["Main thread"]
-        U1["FretboardView<br/>4 strings × 32 touch positions"]
+        U1["PipaBoardView<br/>vector Pipa panel, 4 strings x 32 stops"]
         U2["PipaView<br/>technique buttons, brightness and volume"]
         U3["AudioEngine (@MainActor)<br/>session and graph wiring"]
     end
@@ -123,7 +123,7 @@ flowchart TB
 
 | Stage | Responsibility | Key file |
 | --- | --- | --- |
-| Interaction | Touch board, technique buttons, sliders; forwards intent only | `App/FretboardView.swift`, `App/PipaView.swift` |
+| Interaction | Touch the drawn Pipa directly; forwards intent only | `App/FretboardView.swift` (`PipaBoardView`), `App/PipaView.swift` |
 | Graph wiring | Audio session, source node format, render block factory | `Audio/AudioEngine.swift` |
 | Event queue | Lock-free SPSC ring buffer, sample-accurate scheduling | `Audio/AudioEngine.swift` (`PipaAudioCore`) |
 | String model | Digital waveguide, loop low-pass, all-pass fractional delay | `Core/PipaString.swift` |
@@ -135,7 +135,7 @@ flowchart TB
 
 | Module | Description |
 | --- | --- |
-| Touch position board | 4 strings × 32 positions including the open string, with the real position markers of a Pipa soundboard. Tap any cell to sound it; drag horizontally to strum |
+| Instrument panel | A vector-drawn Pipa: half-pear soundboard with wood grain, four strings with sag, six xiang, twenty-five frets, bridge and pegs. Touch anywhere near a string and the nearest stop sounds | `App/FretboardView.swift`, `App/PipaGeometry.swift` |
 | Technique buttons | Strum up (fu), strum down (sao), tremolo and damping, each triggering on the sample-accurate event queue |
 | Timbre and volume | Brightness slider moves the loop low-pass of all four strings; volume slider moves master gain. Both take effect on the next rendered sample |
 | Offline renderer | Command-line tool that verifies tuning across the whole range and writes the seven demo WAV pieces |
@@ -148,6 +148,7 @@ flowchart TB
 - `vDSP_conv` from the Accelerate framework for the commuted-synthesis convolution
 - 48 kHz preferred session rate; the source node follows the engine's real output format, and pitch is defined in Hz so any rate stays correct
 - The offline renderer is plain Swift compiled by hand with `swiftc`, outside the Xcode target
+- The instrument panel is drawn as vector graphics in pure SwiftUI: soundboard, strings and hardware are all paths, with no image assets and no third-party drawing dependency
 
 ## Project Structure
 
@@ -164,7 +165,8 @@ ElectricPipa/
 ├── App/                      # SwiftUI interface
 │   ├── ElectricPipaApp.swift
 │   ├── PipaView.swift        # Main screen, technique buttons, brightness and volume
-│   ├── FretboardView.swift   # 4 strings × 32 positions touch board, strum gesture
+│   ├── FretboardView.swift   # Vector Pipa panel: soundboard, strings, stops, touch gestures
+│   ├── PipaGeometry.swift    # Panel geometry: outline, stop positions at 2^(-n/12), hit testing
 │   └── Info.plist
 ├── Renderer/
 │   └── main.swift            # Offline renderer, tuning verification, demo WAV output
@@ -232,6 +234,13 @@ Each round below was driven by something the previous round could not do. The fi
 
 - Added a field-context section to the README: where the 1983 core sits in the field, the 2020-2025 differentiable physical modelling line of work, and why the core stays physical instead of becoming a neural waveform model
 - Upgraded the planned parameter identification from manual estimation to differentiable fitting, with the 2025 literature that motivates it
+
+### v1.6 · A real instrument panel (2026-10-19)
+
+- Replaced the grid position board with a vector-drawn Pipa: half-pear soundboard with wood grain, four strings with sag, six xiang on the neck, twenty-five frets on the soundboard, bridge with four string seats, and tuning pegs. Everything is a SwiftUI path, no image assets
+- Stop positions are placed at 2^(-n/12) of the open string length, exactly as on the real instrument. A touch anywhere near a string sounds the nearest stop, and the touch point along the string becomes the excitation point of the pluck, so timbre follows where the finger lands
+- The plucked string shimmers, the stop position lights up, and a sideways drag across the strings still strums. The header shows the current stop as string, position and note name
+- New `App/PipaGeometry.swift` holds the panel geometry and hit testing; type-checked against the iOS simulator SDK in the sandbox, and the two UI views verified through macro-stubbed copies since SwiftUI macros cannot expand in the sandbox
 
 ## Known Limitations / To Be Improved
 
@@ -344,7 +353,7 @@ Source code of a personal project; discussion and learning welcome.
 ```mermaid
 flowchart TB
     subgraph MAIN ["主线程"]
-        U1["FretboardView<br/>4 弦 × 32 触摸音位"]
+        U1["PipaBoardView<br/>矢量琵琶面板,4 弦 × 32 音位"]
         U2["PipaView<br/>技法按钮、明暗与音量"]
         U3["AudioEngine (@MainActor)<br/>会话与音频图装配"]
     end
@@ -365,7 +374,7 @@ flowchart TB
 
 | 阶段 | 职责 | 关键文件 |
 | --- | --- | --- |
-| 交互 | 触摸指板、技法按钮、滑块,只转发意图 | `App/FretboardView.swift`、`App/PipaView.swift` |
+| 交互 | 直接在绘制的琵琶上触摸;只转发意图 | `App/FretboardView.swift`（`PipaBoardView`）、`App/PipaView.swift` |
 | 音频图装配 | 音频会话、源节点格式、渲染块工厂 | `Audio/AudioEngine.swift` |
 | 事件队列 | 无锁 SPSC 环形缓冲,样本精度调度 | `Audio/AudioEngine.swift`（`PipaAudioCore`） |
 | 弦模型 | 数字波导、环路低通、全通分数延迟 | `Core/PipaString.swift` |
@@ -377,7 +386,7 @@ flowchart TB
 
 | 模块 | 说明 |
 | --- | --- |
-| 触摸指板 | 4 弦 × 32 音位（含空弦）,标记按真实琵琶面板位置;点格子发声,横向拖动触发扫弦 |
+| 琵琶面板 | 矢量绘制的整琴:半梨形琴身带木纹、四根带垂度的弦、六相二十五品、覆手与轸子。弦附近任意位置按下,最近音位发声 | `App/FretboardView.swift`、`App/PipaGeometry.swift` |
 | 技法按钮 | 拂弦、扫弦、轮指、止音,全部走样本精度事件队列 |
 | 音色与音量 | 明暗滑块统一移动四弦环路低通,音量滑块移动总增益,都在下一个渲染样本生效 |
 | 离线渲染器 | 命令行工具,做全音域音准校验并写出 7 段演示 WAV |
@@ -390,6 +399,7 @@ flowchart TB
 - Commuted Synthesis 的卷积用 Accelerate 框架的 `vDSP_conv`
 - 会话优先 48 kHz,源节点跟随引擎真实输出格式;音高以 Hz 定义,换采样率仍正确
 - 离线渲染器是纯 Swift,用 `swiftc` 手工编译,不在 Xcode target 里
+- 琵琶面板是纯 SwiftUI 矢量绘制:琴身、琴弦、硬件全是 path,无图片资源、无第三方绘图依赖
 
 ## 项目结构
 
@@ -406,7 +416,8 @@ ElectricPipa/
 ├── App/                      # SwiftUI 界面
 │   ├── ElectricPipaApp.swift
 │   ├── PipaView.swift        # 主界面、技法按钮、明暗与音量
-│   ├── FretboardView.swift   # 4 弦 × 32 触摸指板、扫弦手势
+│   ├── FretboardView.swift   # 矢量琵琶面板:琴身、琴弦、音位、触摸手势
+│   ├── PipaGeometry.swift    # 面板几何:轮廓、按 2^(-n/12) 排布的音位、命中测试
 │   └── Info.plist
 ├── Renderer/
 │   └── main.swift            # 离线渲染器、音准校验、演示 WAV 输出
@@ -474,6 +485,13 @@ xcrun swiftc -swift-version 6 -o PipaRenderer \
 
 - README 增加领域坐标一节:1983 年内核在领域中的位置、2020-2025 可微分物理建模这条线、以及为什么内核保持物理而不是换成神经波形模型
 - 参数辨识计划从手工估计升级为可微分拟合,并补上支撑这一升级的 2025 年文献
+
+### v1.6 · 真琵琶面板（2026-10-19）
+
+- 格子指板换成矢量绘制的整琴:半梨形琴身带木纹、四根带垂度的弦、颈部六相、琴身二十五品、带四个弦枕的覆手、轸子。全部是 SwiftUI path,无图片资源
+- 音位按空弦弦长的 2^(-n/12) 排布,与真实乐器一致。弦附近任意位置按下即发最近音位的声,且落点沿弦的位置成为拨弦激励点——音色跟着手指落点走
+- 被拨的弦会振动,音位会点亮,横向拂过四弦仍然是扫弦;顶部信息栏显示当前音位为「弦名 · 相品 · 音名」
+- 新增 `App/PipaGeometry.swift` 承载面板几何与命中测试,已在沙箱内经 iOS 模拟器 SDK 类型检查;两个视图文件因沙箱内 SwiftUI 宏无法展开,改用宏替身副本完成验证
 
 ## 已知限制 / 待改进
 
