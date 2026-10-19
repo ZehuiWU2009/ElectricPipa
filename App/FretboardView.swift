@@ -69,8 +69,8 @@ struct PipaBoardView: View {
                     }
             )
             // A labelled tuple is not Equatable, so watch a string key of it.
-            .onChange(of: litCell.wrappedValue.map { "\($0.string)-\($0.fret)" }) { _, _ in
-                guard let hit = litCell.wrappedValue else { return }
+            .onChange(of: litCell.map { "\($0.string)-\($0.fret)" }) { _, _ in
+                guard let hit = litCell else { return }
                 shimmerString = hit.string
                 shimmerOffset = 0
                 withAnimation(.linear(duration: 0.055).repeatCount(6, autoreverses: true)) {
