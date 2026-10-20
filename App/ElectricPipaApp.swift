@@ -8,7 +8,7 @@ struct ElectricPipaApp: App {
         WindowGroup {
             PipaView()
                 .environmentObject(audio)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
         }
     }
 }

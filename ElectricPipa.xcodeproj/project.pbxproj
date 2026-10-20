@@ -5,6 +5,8 @@
 	};
 	objectVersion = 56;
 	objects = {
+		ABCDEF012345678900000001 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		ABCDEF012345678900000002 = {isa = PBXBuildFile; fileRef = ABCDEF012345678900000001; };
 		DAD2E93954294FBE9DBC2B71 /* PipaTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6D4FE87D8CD4C6C9921ACD8 /* PipaTuning.swift */; };
 		5BDD15DD49EF4A96A2B5BD10 /* PipaString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64B5682BBFA94D2EA1CD21C2 /* PipaString.swift */; };
 		F4A9B4AC6B4645308CF32008 /* PipaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520D5ED709B5433F90CA53F1 /* PipaBody.swift */; };
@@ -38,6 +40,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ABCDEF012345678900000002,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +84,7 @@
 		6BECF4A7901F4FB4AD548D46 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				ABCDEF012345678900000001,
 				03EDC09128B345BAA0850B7E,
 				7892EBFB8AE2443E850BC230,
 				DA9A9329E73945E8B2FFD698,

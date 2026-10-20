@@ -1,0 +1,4 @@
+{
+  "note": "Integer PCM only. null dB means silence. Full-scale samples flag possible clipping; no automatic quality verdict.",
+  "files": []
+}

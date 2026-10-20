@@ -1,3 +1,5 @@
+> UI update (2026-10-20): the app now uses a photo-derived instrument asset, shared image/touch coordinates, a light Chinese-inspired interface, and a large-target note panel. See [UI-UPDATE.md](UI-UPDATE.md). The older vector-UI descriptions below document previous versions.
+
 # Electric Pipa · 电子琵琶
 
 > 本 README 英文在前、中文在后。

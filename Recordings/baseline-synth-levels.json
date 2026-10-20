@@ -1,0 +1,117 @@
+{
+  "note": "Integer PCM only. null dB means silence. Full-scale samples flag possible clipping; no automatic quality verdict.",
+  "files": [
+    {
+      "file": "PipaAudio/01_open_strings.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 4.5,
+      "channels": 1,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -0.92,
+          "rms_dbfs": -24.63,
+          "dc_mean": -4.7e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "PipaAudio/02_scale.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 4.68,
+      "channels": 1,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -0.92,
+          "rms_dbfs": -22.72,
+          "dc_mean": 2.9e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "PipaAudio/03_tremolo.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 3.4,
+      "channels": 1,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -0.92,
+          "rms_dbfs": -22.46,
+          "dc_mean": 4.5e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "PipaAudio/04_strum.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 3.0,
+      "channels": 1,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -0.92,
+          "rms_dbfs": -27.18,
+          "dc_mean": -7e-07,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "PipaAudio/05_slide.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 2.6,
+      "channels": 1,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -0.92,
+          "rms_dbfs": -34.35,
+          "dc_mean": -0.0001156,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "PipaAudio/06_phrase.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 6.26,
+      "channels": 1,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -0.92,
+          "rms_dbfs": -27.35,
+          "dc_mean": -7.2e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "PipaAudio/07_synthetic_body_ir.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 0.25,
+      "channels": 1,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -0.92,
+          "rms_dbfs": -41.51,
+          "dc_mean": 7.11e-05,
+          "full_scale_samples": 0
+        }
+      ]
+    }
+  ]
+}
