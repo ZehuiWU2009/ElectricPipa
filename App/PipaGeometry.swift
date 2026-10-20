@@ -3,30 +3,145 @@ import SwiftUI
 /// Static geometry of the Pipa panel: the instrument outline, the hardware and
 /// the thirty-two stop positions on each of the four strings.
 ///
-/// The layout follows the real instrument. The soundboard is a half-pear
-/// silhouette; the strings run from the nut at the top to the bridge at the
-/// bottom; and stop position n sits where the sounding length of the string is
-/// 2^(-n/12) of the open length, which is exactly where the six xiang and the
-/// twenty-five frets of a real Pipa are placed, every adjacent pair a semitone
-/// apart in twelve-tone equal temperament.
+/// The layout follows the real instrument, measured from the owner's own
+/// photographs. The head and the pegbox take the top fifth of the board, so
+/// the 山口 (nut) sits well below the top edge and the soundboard swells out
+/// from a slim neck to a wide lower bout whose widest point is low down. The
+/// bottom closes in one broad, shallow curve — the spoon shape of the real
+/// instrument. The four strings run in a shallow fan, narrow where they
+/// leave the nut and a little wider where they cross the 覆手, and every
+/// string crosses the same frets, so nothing can drift out of place.
+///
+/// Stop position n sits where the sounding length of the string is 2^(-n/12)
+/// of the open length, which is exactly where the six xiang and the
+/// twenty-five frets of a real Pipa are placed.
 enum PipaGeometry {
 
     // MARK: Vertical landmarks, as fractions of the board height
 
-    /// 山口, the nut, where the strings start.
-    static let nutFraction: CGFloat = 0.045
+    /// 山口, the nut, where the strings start. On the real instrument the
+    /// carved head and the four pegs take the top fifth of the body, so the
+    /// nut sits at about a quarter of the way down, not at the top edge.
+    static let nutFraction: CGFloat = 0.228
     /// 覆手, the bridge, where the strings end.
-    static let bridgeFraction: CGFloat = 0.925
-
-    // MARK: The four strings, as x fractions of the board width
-
-    /// The Chan string, thickest and lowest, sits on the left; the Zi string,
-    /// thinnest and highest, on the right.
-    static let stringLeftFraction: CGFloat = 0.30
-    static let stringRightFraction: CGFloat = 0.70
+    static let bridgeFraction: CGFloat = 0.905
 
     static let stringCount = 4
     static let positionCount = PipaTuning.positionCount
+
+    // MARK: Horizontal reference
+
+    /// Reference length for all horizontal measurements. Horizontal fractions
+    /// in this file are fractions of this unit, not of the board width, so the
+    /// instrument keeps its true proportions on any screen: the widest point
+    /// of the body is 0.59 units across, and the unit shrinks on narrow
+    /// screens so the body never overflows the panel.
+    static func unit(in rect: CGRect) -> CGFloat {
+        min(rect.width / 0.62, rect.height)
+    }
+
+    // MARK: The instrument outline
+
+    /// Anchors of the half-spoon outline: (y as a fraction of board height,
+    /// half-width as a fraction of unit), measured off the real instrument.
+    /// The top entries describe the head and the pegbox, the middle entries
+    /// the slim neck and the shoulder where the body swells, and everything
+    /// from y 0.78 down sits on one ellipse (centre y 0.814, half-width
+    /// 0.296, bottom y 0.985) so the body closes in a broad round curve
+    /// instead of a point. The same function sizes the xiang and fret bars,
+    /// so every bar ends exactly where the wood does.
+    static let outlineAnchors: [(y: CGFloat, halfWidth: CGFloat)] = [
+        (0.010, 0.048), (0.045, 0.060), (0.090, 0.060), (0.130, 0.052),
+        (0.170, 0.046), (0.200, 0.047), (0.228, 0.053), (0.263, 0.055),
+        (0.302, 0.046), (0.342, 0.070), (0.381, 0.071), (0.421, 0.086),
+        (0.460, 0.104), (0.499, 0.127), (0.539, 0.150), (0.578, 0.175),
+        (0.618, 0.201), (0.657, 0.228), (0.696, 0.255), (0.736, 0.275),
+        (0.775, 0.290), (0.814, 0.296), (0.850, 0.290), (0.880, 0.273),
+        (0.910, 0.245), (0.933, 0.213), (0.950, 0.180), (0.963, 0.145),
+        (0.973, 0.109), (0.980, 0.071), (0.985, 0.000),
+    ]
+
+    /// Half-width of the body at a height fraction `fy`, by cubic Hermite
+    /// interpolation through the outline anchors.
+    ///
+    /// The tangents are taken across the real neighbour distances, so the
+    /// curve stays smooth even where the anchors bunch up near the bottom —
+    /// a uniform Catmull-Rom basis would kink exactly there.
+    static func bodyHalfWidth(atY fy: CGFloat, in rect: CGRect) -> CGFloat {
+        let a = outlineAnchors
+        if fy <= a[0].y { return a[0].halfWidth }
+        var i = 0
+        while i < a.count - 2 && fy >= a[i + 1].y { i += 1 }
+        let p1 = a[i]
+        let p2 = a[i + 1]
+        let p0 = i > 0 ? a[i - 1] : p1
+        let p3 = i + 2 < a.count ? a[i + 2] : p2
+        let h = p2.y - p1.y
+        let m1 = (p2.halfWidth - p0.halfWidth) / (p2.y - p0.y) * h
+        let m2 = (p3.halfWidth - p1.halfWidth) / (p3.y - p1.y) * h
+        let t = (fy - p1.y) / h
+        let t2 = t * t
+        let t3 = t2 * t
+        return (2 * t3 - 3 * t2 + 1) * p1.halfWidth
+            + (t3 - 2 * t2 + t) * m1
+            + (-2 * t3 + 3 * t2) * p2.halfWidth
+            + (t3 - t2) * m2
+    }
+
+    /// The soundboard outline, neck and head included, sampled from the
+    /// half-width function down the right side and mirrored up the left.
+    static func bodyPath(in rect: CGRect) -> Path {
+        let u = unit(in: rect)
+        let steps = 320
+        var path = Path()
+        var first = true
+        for side in [1.0, -1.0] {
+            let range = side > 0 ? Array(0...steps) : Array((0...steps).reversed())
+            for i in range {
+                let fy = 0.010 + (0.985 - 0.010) * CGFloat(i) / CGFloat(steps)
+                let x = rect.midX + side * bodyHalfWidth(atY: fy, in: rect) * u
+                let y = rect.minY + fy * rect.height
+                if first {
+                    path.move(to: CGPoint(x: x, y: y))
+                    first = false
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+        }
+        path.closeSubpath()
+        return path
+    }
+
+    // MARK: The four strings
+
+    /// Half-spread of the four strings, as a fraction of unit. The strings
+    /// leave the 山口 close together and open out a little towards the 覆手,
+    /// exactly as on the real instrument: 缠弦 sets the left edge and the
+    /// other three keep the same order and the same spacing all the way
+    /// down, so no string can drift away from the frets.
+    static let nutHalfSpread: CGFloat = 0.036
+    static let bridgeHalfSpread: CGFloat = 0.053
+
+    /// x of one string at a given height: the strings form a straight, shallow
+    /// fan from the nut to the bridge. String 0 (缠弦) is the leftmost,
+    /// string 3 (子弦) the rightmost.
+    static func stringX(_ string: Int, atY y: CGFloat, in rect: CGRect) -> CGFloat {
+        let nut = nutY(in: rect)
+        let bridge = bridgeY(in: rect)
+        let t = min(1.0, max(0.0, (y - nut) / (bridge - nut)))
+        let half = (nutHalfSpread + (bridgeHalfSpread - nutHalfSpread) * t) * unit(in: rect)
+        let u = CGFloat(string) / CGFloat(stringCount - 1)
+        return rect.midX + (u * 2 - 1) * half
+    }
+
+    /// y of one stop position on a string. Position 0 sits at the nut, the
+    /// open string; each step above it moves toward the bridge.
+    static func positionY(_ position: Int, in rect: CGRect) -> CGFloat {
+        let nut = nutY(in: rect)
+        let length = bridgeY(in: rect) - nut
+        return nut + length * (1.0 - lengthFraction(position))
+    }
 
     /// Sounding length of one string stopped at one position, as a fraction of
     /// the open length: one semitone per step.
@@ -42,81 +157,42 @@ enum PipaGeometry {
         rect.minY + rect.height * bridgeFraction
     }
 
-    static func stringX(_ string: Int, in rect: CGRect) -> CGFloat {
-        let span = stringRightFraction - stringLeftFraction
-        let t = CGFloat(string) / CGFloat(stringCount - 1)
-        return rect.minX + rect.width * (stringLeftFraction + span * t)
-    }
-
-    /// y of one stop position on a string. Position 0 sits at the nut, the
-    /// open string; each step above it moves toward the bridge.
-    static func positionY(_ position: Int, in rect: CGRect) -> CGFloat {
-        let nut = nutY(in: rect)
-        let length = bridgeY(in: rect) - nut
-        return nut + length * (1.0 - lengthFraction(position))
-    }
-
     /// Positions 1 to 6 are the xiang on the neck; 7 and above are the frets
     /// on the soundboard.
     static func isXiang(_ position: Int) -> Bool {
         position >= 1 && position <= PipaTuning.xiangCount
     }
 
-    // MARK: Instrument outline
-
-    /// The half-pear soundboard outline, neck included. All coordinates are
-    /// fractions of the board rect, with x measured from the centre line.
-    static func bodyPath(in rect: CGRect) -> Path {
-        func p(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint {
-            CGPoint(x: rect.midX + fx * rect.width, y: rect.minY + fy * rect.height)
-        }
-        var path = Path()
-        // Top of the neck
-        path.move(to: p(-0.070, 0.015))
-        path.addLine(to: p(0.070, 0.015))
-        // Right neck into the shoulder
-        path.addCurve(to: p(0.440, 0.400),
-                      control1: p(0.100, 0.140),
-                      control2: p(0.440, 0.280))
-        // Shoulder out to the widest point
-        path.addCurve(to: p(0.465, 0.600),
-                      control1: p(0.440, 0.500),
-                      control2: p(0.465, 0.500))
-        // Widest point in to the hip
-        path.addCurve(to: p(0.300, 0.850),
-                      control1: p(0.465, 0.720),
-                      control2: p(0.380, 0.850))
-        // Hip round-off into the bottom tip
-        path.addCurve(to: p(0.000, 0.985),
-                      control1: p(0.240, 0.990),
-                      control2: p(0.100, 0.995))
-        // Mirror back up the left side
-        path.addCurve(to: p(-0.300, 0.850),
-                      control1: p(-0.100, 0.995),
-                      control2: p(-0.240, 0.990))
-        path.addCurve(to: p(-0.465, 0.600),
-                      control1: p(-0.380, 0.850),
-                      control2: p(-0.465, 0.720))
-        path.addCurve(to: p(-0.440, 0.400),
-                      control1: p(-0.465, 0.500),
-                      control2: p(-0.465, 0.500))
-        path.addCurve(to: p(-0.070, 0.015),
-                      control1: p(-0.440, 0.280),
-                      control2: p(-0.100, 0.140))
-        path.closeSubpath()
-        return path
+    /// Half-length of one stop bar, as a fraction of unit.
+    ///
+    /// Measured off the real instrument: the six xiang span the slim neck
+    /// and overhang it a little, and the twenty-five frets form a ladder of
+    /// nearly constant length that starts wide at the top of the fingerboard
+    /// and tapers towards its lower end. Because the soundboard widens as the
+    /// frets descend, the frets cover less and less of the body — which is
+    /// why the low ones stop well short of the binding.
+    static func stopBarHalfWidth(_ position: Int) -> CGFloat {
+        if isXiang(position) { return 0.105 }
+        let fretNumber = position - PipaTuning.xiangCount   // 品1 = 1
+        let total = positionCount - PipaTuning.xiangCount   // 25 品
+        let t = CGFloat(fretNumber - 1) / CGFloat(total - 1)
+        return 0.127 - 0.069 * t
     }
 
-    /// 覆手, the bridge the strings rest on near the bottom of the board.
+    // MARK: Hardware shapes
+
+    /// 覆手, the bridge the strings rest on near the bottom of the board. Wide
+    /// enough to seat the full string fan.
     static func bridgePath(in rect: CGRect) -> Path {
+        let u = unit(in: rect)
         func p(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint {
-            CGPoint(x: rect.midX + fx * rect.width, y: rect.minY + fy * rect.height)
+            CGPoint(x: rect.midX + fx * u, y: rect.minY + fy * rect.height)
         }
         var path = Path()
-        path.move(to: p(-0.075, bridgeFraction - 0.012))
-        path.addLine(to: p(0.075, bridgeFraction - 0.012))
-        path.addLine(to: p(0.095, bridgeFraction + 0.028))
-        path.addLine(to: p(-0.095, bridgeFraction + 0.028))
+        path.move(to: p(-0.070, bridgeFraction - 0.010))
+        path.addLine(to: p(0.070, bridgeFraction - 0.010))
+        path.addLine(to: p(0.086, bridgeFraction + 0.026))
+        path.addLine(to: p(-0.086, bridgeFraction + 0.026))
         path.closeSubpath()
         return path
     }
@@ -124,16 +200,17 @@ enum PipaGeometry {
     /// Fixed wood grain, so the texture is deterministic across runs. Each
     /// entry is start, control and end of one quadratic curve.
     static func grainPaths(in rect: CGRect) -> [Path] {
+        let u = unit(in: rect)
         func p(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint {
-            CGPoint(x: rect.midX + fx * rect.width, y: rect.minY + fy * rect.height)
+            CGPoint(x: rect.midX + fx * u, y: rect.minY + fy * rect.height)
         }
         let strokes: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            (-0.300, 0.180, -0.120, 0.450, -0.220, 0.780),
-            ( 0.050, 0.160,  0.300, 0.420,  0.120, 0.720),
-            (-0.050, 0.560, -0.300, 0.680, -0.100, 0.900),
-            ( 0.280, 0.300,  0.400, 0.560,  0.300, 0.860),
-            (-0.380, 0.340, -0.420, 0.620, -0.350, 0.840),
-            ( 0.100, 0.790,  0.260, 0.860,  0.140, 0.950),
+            (-0.200, 0.260, -0.080, 0.500, -0.150, 0.800),
+            ( 0.040, 0.250,  0.190, 0.480,  0.080, 0.740),
+            (-0.030, 0.640, -0.190, 0.740, -0.060, 0.910),
+            ( 0.180, 0.380,  0.240, 0.600,  0.110, 0.860),
+            (-0.250, 0.420, -0.270, 0.660, -0.210, 0.850),
+            ( 0.060, 0.840,  0.150, 0.900,  0.050, 0.960),
         ]
         return strokes.map { s in
             var path = Path()
@@ -145,27 +222,33 @@ enum PipaGeometry {
 
     /// 轸子, the four tuning pegs sticking out of the head, two per side.
     static func pegPoints(in rect: CGRect) -> [CGPoint] {
+        let u = unit(in: rect)
         func p(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint {
-            CGPoint(x: rect.midX + fx * rect.width, y: rect.minY + fy * rect.height)
+            CGPoint(x: rect.midX + fx * u, y: rect.minY + fy * rect.height)
         }
-        return [p(-0.118, 0.038), p(-0.118, 0.098), p(0.118, 0.038), p(0.118, 0.098)]
+        return [p(-0.055, 0.120), p(-0.055, 0.180),
+                p(0.055, 0.120), p(0.055, 0.180)]
     }
 
     // MARK: Hit testing
 
     /// Nearest stop position to a point in board coordinates, or nil when the
-    /// point is too far from any string to count as a touch on it.
+    /// point is too far from any string to count as a touch on it. The string
+    /// x is measured at the touch height, since the strings fan out towards
+    /// the bridge.
     static func nearest(location: CGPoint, in rect: CGRect) -> (string: Int, fret: Int)? {
+        let u = unit(in: rect)
         var bestString = -1
         var bestDX = CGFloat.infinity
         for string in 0..<stringCount {
-            let distance = abs(location.x - stringX(string, in: rect))
+            let x = stringX(string, atY: location.y, in: rect)
+            let distance = abs(location.x - x)
             if distance < bestDX {
                 bestDX = distance
                 bestString = string
             }
         }
-        guard bestString >= 0, bestDX < rect.width * 0.085 else { return nil }
+        guard bestString >= 0, bestDX < u * 0.040 else { return nil }
         var bestFret = 0
         var bestDY = CGFloat.infinity
         for fret in 0..<positionCount {

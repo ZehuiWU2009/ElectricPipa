@@ -11,23 +11,30 @@ struct PipaView: View {
     @State private var litCell: (string: Int, fret: Int)? = nil
 
     /// Live vibration state shared with the board, one entry per string.
-    /// `stringVib` is the decaying envelope (1 → 0), `stringSwing` the fast
-    /// oscillation phase (0 → 1, repeated), `stringDir` the initial swing side.
-    @State private var stringVib: [CGFloat] = [0, 0, 0, 0]
-    @State private var stringSwing: [CGFloat] = [0, 0, 0, 0]
-    @State private var stringDir: [Double] = [1, 1, 1, 1]
+    /// `start` is when the string was last struck; the board derives the
+    /// amplitude from the live clock, so the motion is always visible.
+    @State private var vib: [StringVib] = Array(repeating: StringVib(), count: PipaGeometry.stringCount)
+    /// Strum slash (fruit-ninja style) state.
+    @State private var slash: SlashState? = nil
+    /// Particle burst trigger for wheel and tan-tiao.
+    @State private var burst = BurstSignal()
+
+    /// Speed controls for the stroke techniques.
+    @State private var tanTiaoBPM: Double = 120          // metronome BPM for tan-tiao
+    @State private var wheelRate: Double = 9             // plucks per second
 
     var body: some View {
         VStack(spacing: 12) {
             header
             PipaBoardView(selection: $selection, litCell: $litCell,
-                          stringVib: $stringVib, stringSwing: $stringSwing, stringDir: $stringDir) { string, fret, position in
+                          vib: $vib, slash: $slash, burst: $burst) { string, fret, position in
                 play(string: string, fret: fret, position: position)
-            } onStrum: { ascending in
-                strumAndAnimate(ascending: ascending)
+            } onStrum: { rightward, starter in
+                strumAndAnimate(sao: rightward, start: starter)
             }
             techniqueButtons
             sliders
+            speedSliders
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
@@ -75,10 +82,10 @@ struct PipaView: View {
 
     private var techniqueButtons: some View {
         HStack(spacing: 10) {
-            techniqueButton("拂弦 ↗") { strumAndAnimate(ascending: true) }
-            techniqueButton("扫弦 ↘") { strumAndAnimate(ascending: false) }
-            techniqueButton("轮指") { wheelAndAnimate() }
             techniqueButton("弹挑") { tanTiaoAndAnimate() }
+            techniqueButton("轮指") { wheelAndAnimate() }
+            techniqueButton("扫弦 →") { strumAndAnimate(sao: true) }
+            techniqueButton("拂弦 ←") { strumAndAnimate(sao: false) }
             techniqueButton("止音") { audio.dampAll() }
         }
     }
@@ -111,13 +118,23 @@ struct PipaView: View {
         }
     }
 
+    /// Speed of the two repeated strokes, so tan-tiao and wheel feel adjustable.
+    private var speedSliders: some View {
+        VStack(spacing: 12) {
+            labelledSlider("弹挑速度", value: $tanTiaoBPM, range: 40...480,
+                           format: { "\(Int($0)) BPM" })
+            labelledSlider("轮指速率", value: $wheelRate, range: 4.0...16.0,
+                           format: { "\(Int($0)) / 秒" })
+        }
+    }
+
     private func labelledSlider<T>(_ title: String, value: Binding<T>, range: ClosedRange<T>,
                                format: @escaping (T) -> String) -> some View
         where T: BinaryFloatingPoint, T.Stride: BinaryFloatingPoint {
         HStack {
             Text(title).font(.subheadline).foregroundColor(.white.opacity(0.8)).frame(width: 64, alignment: .leading)
             Slider(value: value, in: range).accentColor(.orange)
-            Text(format(value.wrappedValue)).font(.caption).foregroundColor(.white.opacity(0.6)).frame(width: 44)
+            Text(format(value.wrappedValue)).font(.caption).foregroundColor(.white.opacity(0.6)).frame(width: 56)
         }
     }
 
@@ -128,54 +145,90 @@ struct PipaView: View {
         audio.pluck(string: string, fret: fret, velocity: 0.85, position: position)
         selection = (string, fret)
         litCell = (string, fret)
-        kick(string: string)
+        kick(string: string, fret: fret)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
             if litCell?.string == string, litCell?.fret == fret { litCell = nil }
         }
     }
 
-    /// Set a string swinging. The envelope decays from 1 to 0 over `duration`,
-    /// while a fast oscillation phase repeats, so the string looks like it was
-    /// plucked and is ringing out. `dir` is the initial swing side.
-    private func kick(string: Int, dir: Double = 1, duration: Double = 0.45) {
-        guard string >= 0, string < stringVib.count else { return }
-        stringDir[string] = dir
-        stringVib[string] = 1          // snap to full amplitude, no animation
-        stringSwing[string] = 0
-        let swings = max(2, Int(duration / 0.20))
-        withAnimation(.easeOut(duration: duration)) { stringVib[string] = 0 }
-        withAnimation(.linear(duration: 0.10).repeatCount(swings, autoreverses: true)) {
-            stringSwing[string] = 1
-        }
+    /// Strike a string: stamp its vibration start, which the board reads from
+    /// the live clock. No `withAnimation` is needed.
+    private func kick(string: Int, fret: Int, dir: Double = 1, duration: Double = 0.45, freq: Double = 9) {
+        guard string >= 0, string < vib.count else { return }
+        vib[string].fret = fret
+        vib[string].dir = dir
+        vib[string].dur = duration
+        vib[string].freq = freq
+        vib[string].start = Date()
     }
 
-    /// Strum across the four strings, with the animation following the audio
-    /// order and spacing so the strings light up in sequence.
-    private func strumAndAnimate(ascending: Bool) {
-        audio.strum(ascending: ascending)
-        let order = ascending ? [0, 1, 2, 3] : [3, 2, 1, 0]
-        let dir = ascending ? 1.0 : -1.0
-        for (index, s) in order.enumerated() {
+    /// Sao (扫弦) and Fu (拂弦). Both sweep across all four strings and play
+    /// the same four notes — one stop position per string, each a semitone
+    /// higher than the last — and they start from the position the player
+    /// chose: the one their finger landed on in this drag, or the note that
+    /// is currently selected.
+    ///
+    /// Sao runs 缠弦→子弦, that is left to right and down the board, and the
+    /// blade sweeps from the upper left to the lower right. Fu runs the other
+    /// way: 子弦→缠弦, from the lower right up to the upper left, over the
+    /// very same four notes. The audio and the curved blade follow the same
+    /// order, so each string sounds and glows exactly where the blade crosses
+    /// it.
+    private func strumAndAnimate(sao: Bool, start: (string: Int, fret: Int)? = nil) {
+        let maxFret = PipaGeometry.positionCount - 1
+        let origin = start ?? selection
+        let f0 = min(max(origin.fret, 0), maxFret)
+        let order = sao ? [0, 1, 2, 3] : [3, 2, 1, 0]
+        let dir = sao ? 1.0 : -1.0
+        var points: [(string: Int, fret: Int)] = []
+        for (index, str) in order.enumerated() {
+            // The same four notes in both directions: string k sits at f0 + k,
+            // so 扫 climbs from 缠弦 to 子弦 and 拂 falls back from 子弦 to
+            // 缠弦 — which is what makes the blade run from the lower right
+            // up to the upper left.
+            let fret = min(f0 + str, maxFret)
+            points.append((string: str, fret: fret))
             let offset = 0.022 * Double(index)
             DispatchQueue.main.asyncAfter(deadline: .now() + offset) {
-                kick(string: s, dir: dir, duration: 0.4)
+                audio.pluck(string: str, fret: fret, velocity: 0.85, position: 0.5)
+                kick(string: str, fret: fret, dir: dir, duration: 0.4)
             }
+        }
+        let s = SlashState(points: points, start: Date())
+        slash = s
+        DispatchQueue.main.asyncAfter(deadline: .now() + SlashState.totalDuration) {
+            if slash?.start == s.start { slash = nil }
         }
     }
 
-    /// Wheel (轮指): a single string kept ringing for the tremolo duration.
+    /// Wheel (轮指): a single string kept ringing for the tremolo duration,
+    /// with a particle burst at its fret.
     private func wheelAndAnimate() {
-        audio.tremolo(string: selection.string, fret: selection.fret, rate: 9, duration: 1.8)
-        kick(string: selection.string, dir: 1, duration: 1.8)
+        audio.tremolo(string: selection.string, fret: selection.fret, rate: wheelRate, duration: 1.8)
+        kick(string: selection.string, fret: selection.fret, duration: 1.8, freq: 7)
+        burst = BurstSignal(token: burst.token + 1, string: selection.string, fret: selection.fret)
     }
 
-    /// Tan-Tiao (弹挑): one string struck outward then inward, quick and
-    /// reversed, so the string visibly snaps back and forth.
+    /// Tan-Tiao (弹挑): the string is struck outward then inward, again and
+    /// again for five seconds. One metronome beat is one full 弹+挑 pair —
+    /// two strokes — so at 120 BPM the string takes 240 strokes (120 pairs)
+    /// per minute, and each stroke lands 30 / BPM seconds after the previous
+    /// one. Each stroke throws a particle burst at its fret.
     private func tanTiaoAndAnimate() {
-        audio.tanTiao(string: selection.string, fret: selection.fret)
-        kick(string: selection.string, dir: 1, duration: 0.5)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.085) {
-            kick(string: selection.string, dir: -1, duration: 0.35)
+        let stroke = 30.0 / tanTiaoBPM
+        let duration = 5.0
+        audio.tanTiao(string: selection.string, fret: selection.fret,
+                      interval: stroke, duration: duration)
+        let strokes = max(1, Int(duration / stroke))
+        for i in 0..<strokes {
+            let offset = stroke * Double(i)
+            let dir = (i % 2 == 0) ? 1.0 : -1.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + offset) {
+                kick(string: selection.string, fret: selection.fret, dir: dir,
+                     duration: min(stroke * 0.9, 0.5), freq: 8)
+                burst = BurstSignal(token: burst.token + 1,
+                                   string: selection.string, fret: selection.fret)
+            }
         }
     }
 }

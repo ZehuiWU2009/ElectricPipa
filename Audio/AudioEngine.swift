@@ -162,11 +162,19 @@ final class PipaAudioCore: @unchecked Sendable {
         schedule(.damp(string: string), atOffset: 0)
     }
 
-    /// Tan-Tiao (弹挑): one string struck twice in quick succession, first
-    /// outward (tan, brighter), then inward (tiao, darker), about 85 ms apart.
-    func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5) {
-        schedule(.pluck(string: string, fret: fret, velocity: velocity, position: min(0.92, position + 0.12)), atOffset: 0)
-        schedule(.pluck(string: string, fret: fret, velocity: velocity * 0.9, position: max(0.08, position - 0.12)), atOffset: 0.085)
+    /// Tan-Tiao (弹挑): the string is struck again and again, alternating
+    /// outward (tan, brighter) and inward (tiao, darker) `interval` seconds
+    /// apart, for `duration` seconds — the classic continuous 弹挑 roll.
+    func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5, interval: Double = 0.5, duration: Double = 5.0) {
+        var t = 0.0
+        var outward = true
+        while t < duration {
+            let pos = outward ? min(0.92, position + 0.12) : max(0.08, position - 0.12)
+            let v = outward ? velocity : velocity * 0.9
+            schedule(.pluck(string: string, fret: fret, velocity: v, position: pos), atOffset: t)
+            t += interval
+            outward.toggle()
+        }
     }
 
     func dampAll() {
@@ -303,10 +311,13 @@ final class AudioEngine: ObservableObject {
         core?.damp(string: string)
     }
 
-    /// Tan-Tiao (弹挑): the string is struck twice, outward then inward.
-    func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5) {
+    /// Tan-Tiao (弹挑): the string is struck repeatedly, alternating outward and
+    /// inward `interval` seconds apart for `duration` seconds. One metronome
+    /// beat is one 弹+挑 pair — two strokes — so the UI passes
+    /// interval = 30 / BPM (at 120 BPM, 240 strokes per minute).
+    func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5, interval: Double = 0.5, duration: Double = 5.0) {
         ensureStarted()
-        core.tanTiao(string: string, fret: fret, velocity: velocity, position: position)
+        core.tanTiao(string: string, fret: fret, velocity: velocity, position: position, interval: interval, duration: duration)
     }
 
     func dampAll() {
