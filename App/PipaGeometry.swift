@@ -44,30 +44,56 @@ enum PipaGeometry {
 
     /// Anchors of the half-spoon outline: (y as a fraction of board height,
     /// half-width as a fraction of unit), measured off the real instrument.
-    /// The top entries describe the head and the pegbox, the middle entries
-    /// the slim neck and the shoulder where the body swells, and everything
-    /// from y 0.78 down sits on one ellipse (centre y 0.814, half-width
-    /// 0.296, bottom y 0.985) so the body closes in a broad round curve
-    /// instead of a point. The same function sizes the xiang and fret bars,
-    /// so every bar ends exactly where the wood does.
+    /// The top entries describe the head and the pegbox and the middle entries
+    /// the slim neck and the shoulder where the body swells. The last entry
+    /// past `bellyCentreY` is kept even though the interpolation stops there:
+    /// it is what makes the tangent at the widest point horizontal, so the
+    /// Hermite part and the elliptical part join without a kink.
     static let outlineAnchors: [(y: CGFloat, halfWidth: CGFloat)] = [
         (0.010, 0.048), (0.045, 0.060), (0.090, 0.060), (0.130, 0.052),
         (0.170, 0.046), (0.200, 0.047), (0.228, 0.053), (0.263, 0.055),
         (0.302, 0.046), (0.342, 0.070), (0.381, 0.071), (0.421, 0.086),
         (0.460, 0.104), (0.499, 0.127), (0.539, 0.150), (0.578, 0.175),
         (0.618, 0.201), (0.657, 0.228), (0.696, 0.255), (0.736, 0.275),
-        (0.775, 0.290), (0.814, 0.296), (0.850, 0.290), (0.880, 0.273),
-        (0.910, 0.245), (0.933, 0.213), (0.950, 0.180), (0.963, 0.145),
-        (0.973, 0.109), (0.980, 0.071), (0.985, 0.000),
+        (0.775, 0.290), (0.814, 0.296), (0.850, 0.290),
     ]
 
-    /// Half-width of the body at a height fraction `fy`, by cubic Hermite
-    /// interpolation through the outline anchors.
+    // MARK: The lower bout
+
+    /// The bottom of the body is one exact ellipse, not more spline: the real
+    /// instrument closes in a broad round curve and the ellipse is the only
+    /// simple curve whose tangent at its lowest point is truly horizontal. A
+    /// spline can be made to pass through the same points, but its slope
+    /// saturates at a finite value there, and mirroring it leaves a visible
+    /// point at the bottom instead of a smooth curve.
+    ///
+    /// Its centre line sits at `bellyCentreY`, which is also the widest point
+    /// of the body, and it reaches half-width zero at `bellyBottomY`.
+    static let bellyCentreY: CGFloat = 0.814
+    static let bellyHalfWidth: CGFloat = 0.296
+    static let bellyBottomY: CGFloat = 0.985
+    /// Quarter height of that ellipse, the distance from the centre line down
+    /// to the bottom edge.
+    static let bellyRise: CGFloat = bellyBottomY - bellyCentreY
+
+    /// Half-width of the elliptical lower bout at a height fraction `fy`.
+    static func bellyHalfWidth(atY fy: CGFloat) -> CGFloat {
+        let t = (fy - bellyCentreY) / bellyRise
+        if t >= 1 { return 0 }
+        return bellyHalfWidth * sqrt(max(0, 1 - t * t))
+    }
+
+    /// Half-width of the body at a height fraction `fy`: cubic Hermite
+    /// interpolation through the outline anchors down to the widest point,
+    /// then the elliptical lower bout.
     ///
     /// The tangents are taken across the real neighbour distances, so the
     /// curve stays smooth even where the anchors bunch up near the bottom —
-    /// a uniform Catmull-Rom basis would kink exactly there.
+    /// a uniform Catmull-Rom basis would kink exactly there. At the junction
+    /// both sides are horizontal, so the two parts meet flat.
     static func bodyHalfWidth(atY fy: CGFloat, in rect: CGRect) -> CGFloat {
+        if fy >= bellyBottomY { return 0 }
+        if fy >= bellyCentreY { return bellyHalfWidth(atY: fy) }
         let a = outlineAnchors
         if fy <= a[0].y { return a[0].halfWidth }
         var i = 0
@@ -90,25 +116,41 @@ enum PipaGeometry {
 
     /// The soundboard outline, neck and head included, sampled from the
     /// half-width function down the right side and mirrored up the left.
+    ///
+    /// The upper part is sampled evenly in y. The elliptical bottom is
+    /// sampled evenly in *angle* instead, which is what keeps the curve
+    /// smooth where it turns horizontal: sampled evenly in y, the last chord
+    /// before the bottom still leans a few degrees and mirroring puts a
+    /// crease right at the lowest point.
     static func bodyPath(in rect: CGRect) -> Path {
         let u = unit(in: rect)
         let steps = 320
-        var path = Path()
-        var first = true
-        for side in [1.0, -1.0] {
-            let range = side > 0 ? Array(0...steps) : Array((0...steps).reversed())
-            for i in range {
-                let fy = 0.010 + (0.985 - 0.010) * CGFloat(i) / CGFloat(steps)
-                let x = rect.midX + side * bodyHalfWidth(atY: fy, in: rect) * u
-                let y = rect.minY + fy * rect.height
-                if first {
-                    path.move(to: CGPoint(x: x, y: y))
-                    first = false
-                } else {
-                    path.addLine(to: CGPoint(x: x, y: y))
-                }
-            }
+        let bellySteps = 96
+        var points: [CGPoint] = []
+        points.reserveCapacity(2 * (steps + bellySteps) + 2)
+        func push(side: CGFloat, _ fy: CGFloat) {
+            let x = rect.midX + side * bodyHalfWidth(atY: fy, in: rect) * u
+            points.append(CGPoint(x: x, y: rect.minY + fy * rect.height))
         }
+        for i in 0...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            push(side: 1, 0.010 + (bellyCentreY - 0.010) * t)
+        }
+        for i in 1...bellySteps {
+            let angle = (CGFloat(i) / CGFloat(bellySteps)) * .pi / 2
+            push(side: 1, bellyCentreY + bellyRise * sin(angle))
+        }
+        for i in stride(from: bellySteps - 1, through: 1, by: -1) {
+            let angle = (CGFloat(i) / CGFloat(bellySteps)) * .pi / 2
+            push(side: -1, bellyCentreY + bellyRise * sin(angle))
+        }
+        for i in stride(from: steps, through: 0, by: -1) {
+            let t = CGFloat(i) / CGFloat(steps)
+            push(side: -1, 0.010 + (bellyCentreY - 0.010) * t)
+        }
+        var path = Path()
+        path.move(to: points[0])
+        for point in points.dropFirst() { path.addLine(to: point) }
         path.closeSubpath()
         return path
     }
