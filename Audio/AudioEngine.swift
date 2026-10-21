@@ -145,12 +145,20 @@ final class PipaAudioCore: @unchecked Sendable {
         }
     }
 
+    /// Wheel (轮指): the five fingers thrown in turn — index, middle, ring,
+    /// little, thumb — one cycle being five plucks with the accent on the
+    /// first, each finger at its own spot and its own weight. See
+    /// WheelFinger for why five rather than four: a four-finger cycle falls
+    /// into 2 + 2 pairs and sounds like tan-tiao (弹挑).
     func tremolo(string: Int, fret: Int, rate: Double, duration: Double, velocity: Double = 0.5) {
         let count = max(1, Int(rate * duration))
+        let fingers = WheelFinger.allCases
         for index in 0..<count {
             let time = duration * Double(index) / Double(count)
-            let accent = 1.0 + 0.18 * sin(Double(index % 4) * 1.7)
-            schedule(.pluck(string: string, fret: fret, velocity: velocity * accent, position: 0.55), atOffset: time)
+            let finger = fingers[index % fingers.count]
+            schedule(.pluck(string: string, fret: fret,
+                            velocity: velocity * finger.velocityScale,
+                            position: finger.position), atOffset: time)
         }
     }
 

@@ -113,17 +113,23 @@ final class PipaSynth {
         }
     }
 
-    /// Tremolo, repeating plucks on one string at a fixed density for a while.
-    /// - Parameter rate: plucks per second; professional playing reaches 8 to 12.
+    /// Wheel (轮指): the five fingers thrown in turn — index, middle, ring,
+    /// little, thumb — repeating on one string at a fixed density for a
+    /// while, so one cycle of the wheel is five plucks with the accent on
+    /// the first. Each finger strikes at its own spot and its own weight,
+    /// which is what separates a wheel from tan-tiao (弹挑).
+    /// - Parameter rate: plucks per second; a full five-finger cycle takes
+    ///   5 / rate seconds. Professional playing reaches 8 to 12.
     func tremolo(string: Int, fret: Int, rate: Double, duration: Double, velocity: Double = 0.55) {
         let count = max(1, Int(rate * duration))
+        let fingers = WheelFinger.allCases
         for index in 0..<count {
             let delay = duration * Double(index) / Double(count)
-            // Tremolo is thrown by index, middle, ring and little finger in
-            // turn, so the velocity naturally rises and falls.
-            let accent = 1.0 + 0.18 * sin(Double(index % 4) * 1.7)
+            let finger = fingers[index % fingers.count]
             Scheduler.shared.schedule(after: delay) { [weak self] in
-                self?.pluck(string: string, fret: fret, velocity: velocity * accent, position: 0.55)
+                self?.pluck(string: string, fret: fret,
+                            velocity: velocity * finger.velocityScale,
+                            position: finger.position)
             }
         }
     }
@@ -142,6 +148,46 @@ final class PipaSynth {
     func render(into output: inout [Float], count: Int) {
         for index in 0..<count {
             output[index] = renderSample()
+        }
+    }
+}
+
+/// The five fingers of the right hand in the order a wheel (轮指) throws
+/// them: index, middle, ring, little, thumb.
+///
+/// A real wheel is five strokes in a cycle, not four. Modelling it as four
+/// throws makes the accent recur every four plucks, which the ear groups as
+/// 2 + 2 pairs — exactly the two-against-two feel of tan-tiao (弹挑). Five
+/// per cycle, with the thumb answering against the grain, is what a wheel
+/// sounds like.
+enum WheelFinger: CaseIterable {
+    case index, middle, ring, little, thumb
+
+    /// How hard this finger strikes, relative to the others. The four
+    /// throwing fingers weaken toward the little finger, the shortest and
+    /// last thrown; the thumb answers against the grain and comes back the
+    /// strongest, closing each cycle with a lift instead of a click.
+    var velocityScale: Double {
+        switch self {
+        case .index: return 1.00
+        case .middle: return 0.95
+        case .ring: return 0.88
+        case .little: return 0.82
+        case .thumb: return 1.06
+        }
+    }
+
+    /// Where this finger strikes, as a fraction of the speaking length:
+    /// 0.5 is the conventional spot, smaller is closer to the bridge and
+    /// harder. The four throwing fingers creep toward the bridge as they
+    /// weaken; the thumb sits on the other side of the conventional spot.
+    var position: Double {
+        switch self {
+        case .index: return 0.50
+        case .middle: return 0.52
+        case .ring: return 0.54
+        case .little: return 0.56
+        case .thumb: return 0.47
         }
     }
 }
