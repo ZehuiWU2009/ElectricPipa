@@ -17,10 +17,10 @@ struct StringVib {
 /// A fruit-ninja style curved blade arcing across the four strings, used by
 /// sao (扫弦) and fu (拂弦).
 ///
-/// The blade follows the player's first touch: it passes through four
-/// consecutive stop positions — one per string, each one semitone (one fret)
-/// higher than the last — so the sweep starts at the exact 品 the finger landed
-/// on and rises up the neck as it crosses to the last string. Sao arcs from the
+/// The blade follows the player's first touch: it passes through four stop
+/// positions — one per string, all on the same 品 the finger landed on — so
+/// the sweep is one chord spread across the row of that fret, the way a
+/// single pressed fret bar stops all four strings together. Sao arcs from the
 /// Chan string (缠弦, leftmost) to the Zi string (子弦, rightmost); fu arcs the
 /// other way. The board resolves each stop position to real coordinates.
 struct SlashState {

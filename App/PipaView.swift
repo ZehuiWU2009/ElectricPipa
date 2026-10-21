@@ -329,36 +329,36 @@ struct PipaView: View {
         vib[string].start = Date()
     }
 
-    /// Sao (扫弦) and Fu (拂弦). Both sweep across all four strings and play
-    /// the same four notes — one stop position per string, each a semitone
-    /// higher than the last — and they start from the position the player
-    /// chose: the one their finger landed on in this drag, or the note that
-    /// is currently selected.
+    /// Sao (扫弦) and Fu (拂弦). Both sweep across all four strings, and all
+    /// four notes sit on the same 品: the left hand holds one stop position —
+    /// one pressed fret bar stops the whole row of strings at once — and the
+    /// blade crosses the four strings there, so each string sounds its own
+    /// pitch at that one fret and the sweep is a chord. The fret is the one
+    /// the player chose: the position their finger landed on in this drag, or
+    /// the note that is currently selected.
     ///
-    /// Sao runs 缠弦→子弦, that is left to right and down the board, and the
-    /// blade sweeps from the upper left to the lower right. Fu runs the other
-    /// way: 子弦→缠弦, from the lower right up to the upper left, over the
-    /// very same four notes. The audio and the curved blade follow the same
-    /// order, so each string sounds and glows exactly where the blade crosses
-    /// it.
+    /// Sao runs 缠弦→子弦, that is left to right across the row, and the blade
+    /// sweeps from left to right. Fu runs the other way: 子弦→缠弦, from right
+    /// to left over the very same four notes. The audio and the curved blade
+    /// follow the same order, so each string sounds and glows exactly where
+    /// the blade crosses it.
     private func strumAndAnimate(sao: Bool, start: (string: Int, fret: Int)? = nil) {
         // A sweep is another technique: it takes over from any running roll.
         if rolling != nil { stopRoll() }
         let maxFret = PipaGeometry.positionCount - 1
         let origin = start ?? selection
+        // One stop position for the whole row. Every string of the sweep is
+        // stopped at the same 品 the player chose, so the four notes form a
+        // chord spread across the strings rather than a ladder climbing one
+        // semitone per string — the way a single pressed fret bar stops all
+        // four strings together on the instrument.
         let f0 = min(max(origin.fret, 0), maxFret)
-        let s0 = origin.string
         let order = sao ? [0, 1, 2, 3] : [3, 2, 1, 0]
         let dir = sao ? 1.0 : -1.0
         var points: [(string: Int, fret: Int)] = []
         for index in 0..<4 {
             let str = order[index]
-            // Every string sounds one semitone higher than the last as the blade
-            // crosses the board, but the ladder is anchored on the string the
-            // player touched: that string gets f0, so the sweep starts from the
-            // chosen note instead of always beginning on 缠弦. 扫 and 拂 play
-            // the same four notes, just in opposite sweep order.
-            let fret = min(max(f0 + (str - s0), 0), maxFret)
+            let fret = f0
             points.append((string: str, fret: fret))
             let offset = 0.022 * Double(index)
             DispatchQueue.main.asyncAfter(deadline: .now() + offset) {
