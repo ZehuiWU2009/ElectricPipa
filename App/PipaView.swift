@@ -275,15 +275,18 @@ struct PipaView: View {
         let maxFret = PipaGeometry.positionCount - 1
         let origin = start ?? selection
         let f0 = min(max(origin.fret, 0), maxFret)
+        let s0 = origin.string
         let order = sao ? [0, 1, 2, 3] : [3, 2, 1, 0]
         let dir = sao ? 1.0 : -1.0
         var points: [(string: Int, fret: Int)] = []
-        for (index, str) in order.enumerated() {
-            // The same four notes in both directions: string k sits at f0 + k,
-            // so 扫 climbs from 缠弦 to 子弦 and 拂 falls back from 子弦 to
-            // 缠弦 — which is what makes the blade run from the lower right
-            // up to the upper left.
-            let fret = min(f0 + str, maxFret)
+        for index in 0..<4 {
+            let str = order[index]
+            // Every string sounds one semitone higher than the last as the blade
+            // crosses the board, but the ladder is anchored on the string the
+            // player touched: that string gets f0, so the sweep starts from the
+            // chosen note instead of always beginning on 缠弦. 扫 and 拂 play
+            // the same four notes, just in opposite sweep order.
+            let fret = min(max(f0 + (str - s0), 0), maxFret)
             points.append((string: str, fret: fret))
             let offset = 0.022 * Double(index)
             DispatchQueue.main.asyncAfter(deadline: .now() + offset) {
