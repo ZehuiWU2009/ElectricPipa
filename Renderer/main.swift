@@ -253,10 +253,10 @@ for (index, fret) in pentatonicFrets.enumerated() {
 }
 write(renderNotes(scaleNotes), named: "02_scale.wav")
 
-// 3. Tremolo: nine plucks a second on the open Zi string, two seconds long.
+// 3. Tremolo: nine plucks a second on the Zi string, five full cycles.
 Scheduler.shared.reset()
 let tremoloSynth = PipaSynth(sampleRate: sampleRate)
-tremoloSynth.tremolo(string: 3, fret: 7, rate: 9, duration: 2.0, velocity: 0.5)
+tremoloSynth.tremolo(string: 3, fret: 7, rate: 9, cycles: 5, velocity: 0.5)
 var tremolo = [Float](repeating: 0, count: Int(3.4 * sampleRate))
 tremoloSynth.render(into: &tremolo, count: tremolo.count)
 write(tremolo, named: "03_tremolo.wav")

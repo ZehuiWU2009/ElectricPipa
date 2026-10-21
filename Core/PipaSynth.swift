@@ -115,18 +115,21 @@ final class PipaSynth {
 
     /// Wheel (轮指): the five fingers thrown in turn — index, middle, ring,
     /// little, thumb — repeating on one string at a fixed density for a
-    /// while, so one cycle of the wheel is five plucks with the accent on
-    /// the first. Each finger strikes at its own spot and its own weight,
-    /// which is what separates a wheel from tan-tiao (弹挑).
+    /// number of cycles, so one cycle of the wheel is five plucks with the
+    /// accent on the first. Each finger strikes at its own spot and its own
+    /// weight, which is what separates a wheel from tan-tiao (弹挑).
+    ///
+    /// A passage is counted in cycles rather than seconds: five cycles are
+    /// twenty-five plucks and take 25 / rate seconds. For a wheel that goes on
+    /// until the player stops it, drive a roll instead.
     /// - Parameter rate: plucks per second; a full five-finger cycle takes
     ///   5 / rate seconds. Professional playing reaches 8 to 12.
-    func tremolo(string: Int, fret: Int, rate: Double, duration: Double, velocity: Double = 0.55) {
-        let count = max(1, Int(rate * duration))
+    func tremolo(string: Int, fret: Int, rate: Double, cycles: Double, velocity: Double = 0.55) {
         let fingers = WheelFinger.allCases
+        let count = max(1, Int((cycles * Double(fingers.count)).rounded()))
         for index in 0..<count {
-            let delay = duration * Double(index) / Double(count)
             let finger = fingers[index % fingers.count]
-            Scheduler.shared.schedule(after: delay) { [weak self] in
+            Scheduler.shared.schedule(after: Double(index) / rate) { [weak self] in
                 self?.pluck(string: string, fret: fret,
                             velocity: velocity * finger.velocityScale,
                             position: finger.position)

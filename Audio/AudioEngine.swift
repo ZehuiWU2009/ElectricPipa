@@ -1,195 +1,6 @@
 import AVFoundation
 import Foundation
 
-/// One kind of performance event.
-fileprivate enum PipaEvent {
-    case pluck(string: Int, fret: Int, velocity: Double, position: Double)
-    case bend(string: Int, to: Double)
-    case damp(string: Int)
-    case dampAll
-    case setBrightness(Double)
-    case setMasterGain(Float)
-}
-
-/// One event with its time already resolved.
-fileprivate struct ScheduledPipaEvent {
-    let dueSample: Int64
-    let event: PipaEvent
-}
-
-/// The kernel that actually runs on the audio thread.
-///
-/// The synth and the event queue both live here. To keep the real-time thread
-/// free of memory allocation, locking and random sources, the event queue is a
-/// bounded ring buffer with atomic indices: the main thread produces, the render
-/// thread consumes. Every write to the synth also happens on the render thread
-/// only. The main thread just drops performance intent into the queue, and the
-/// render thread picks it up at the matching sample and applies it. The
-/// AVAudioSourceNode render block can therefore capture this object safely while
-/// the whole path stays allocation-free, lock-free and random-source-free, which
-/// is what CoreAudio demands of a real-time callback.
-final class PipaAudioCore: @unchecked Sendable {
-    let sampleRate: Double
-    let synth: PipaSynth
-
-    // Bounded ring buffer for events. The capacity far exceeds the number of
-    // events a single gesture can pile up.
-    // Single producer (main thread), single consumer (render thread): plain
-    // integer indices plus OSMemoryBarrier give lock-free synchronisation, so
-    // the render thread never allocates and never locks, which is what CoreAudio
-    // demands of a real-time callback.
-    private let queueCapacity = 128
-    private var eventQueue: ContiguousArray<ScheduledPipaEvent>
-    private var enqueueIndex: Int = 0   // written by the main thread only
-    private var dequeueIndex: Int = 0   // written by the render thread only
-    private var rendered: Int64 = 0      // written by the render thread, read approximately by the main thread
-
-    init(sampleRate: Double, bodySizeScale: Double = 1.0) {
-        self.sampleRate = sampleRate
-        self.synth = PipaSynth(sampleRate: sampleRate, bodySizeScale: bodySizeScale)
-        self.eventQueue = ContiguousArray(repeating: ScheduledPipaEvent(dueSample: 0, event: .dampAll), count: queueCapacity)
-    }
-
-    /// Main-thread side settings: only intent is queued; the real write happens
-    /// on the render thread.
-    func setMasterGain(_ value: Float) { enqueue(.setMasterGain(value), at: rendered) }
-    func setBrightness(_ value: Double) { enqueue(.setBrightness(value), at: rendered) }
-
-    // MARK: - Real-time rendering
-
-    func render(frames: Int, bufferList: UnsafeMutablePointer<AudioBufferList>) {
-        let abl = UnsafeMutableAudioBufferListPointer(bufferList)
-        guard abl.count > 0 else { return }
-
-        // Cap the work at the smallest capacity across channels, so nothing is
-        // ever written out of bounds.
-        var n = frames
-        for buf in 0..<abl.count {
-            guard abl[buf].mData != nil else { n = 0; break }
-            let cap = Int(abl[buf].mDataByteSize) / MemoryLayout<Float>.stride
-            n = min(n, cap)
-        }
-        guard n > 0 else { return }
-
-        let prod = enqueueIndex
-        for i in 0..<n {
-            // Pick up every event that has come due and apply it to the synth.
-            // This step happens on the render thread only.
-            var cons = dequeueIndex
-            let now = rendered
-            while cons != prod {
-                let slot = cons % queueCapacity
-                let ev = eventQueue[slot]
-                if ev.dueSample > now { break }
-                apply(ev.event)
-                cons += 1
-                dequeueIndex = cons
-            }
-
-            let sample = synth.renderSample()
-            for buf in 0..<abl.count {
-                if let pointer = abl[buf].mData?.assumingMemoryBound(to: Float.self) {
-                    let cap = Int(abl[buf].mDataByteSize) / MemoryLayout<Float>.stride
-                    if i < cap { pointer[i] = sample }
-                }
-            }
-            rendered += 1
-        }
-    }
-
-    private func apply(_ event: PipaEvent) {
-        switch event {
-        case .pluck(let string, let fret, let velocity, let position):
-            synth.pluck(string: string, fret: fret, velocity: velocity, position: position)
-        case .bend(let string, let frequency):
-            synth.bend(string: string, to: frequency)
-        case .damp(let string):
-            synth.damp(string: string)
-        case .dampAll:
-            synth.dampAll()
-        case .setBrightness(let value):
-            synth.setBrightness(value)
-        case .setMasterGain(let value):
-            synth.masterGain = value
-        }
-    }
-
-    // MARK: - Main-thread interface
-
-    private func enqueue(_ event: PipaEvent, at dueSample: Int64) {
-        let prod = enqueueIndex
-        let cons = dequeueIndex
-        // Drop the event when the queue is full. This almost never fires in
-        // practice: missing one event is preferable to allocating on the
-        // real-time thread.
-        if (prod + 1) % queueCapacity == cons % queueCapacity { return }
-        eventQueue[prod % queueCapacity] = ScheduledPipaEvent(dueSample: dueSample, event: event)
-        OSMemoryBarrier()  // Make the slot write visible to the render thread before the index advances
-        enqueueIndex = prod + 1
-    }
-
-    fileprivate func schedule(_ event: PipaEvent, atOffset seconds: Double) {
-        let due = rendered + Int64(seconds * sampleRate)
-        enqueue(event, at: due)
-    }
-
-    func pluck(string: Int, fret: Int, velocity: Double = 0.85, position: Double = 0.5) {
-        schedule(.pluck(string: string, fret: fret, velocity: velocity, position: position), atOffset: 0)
-    }
-
-    func strum(ascending: Bool = true, velocity: Double = 0.78, spacing: Double = 0.022) {
-        let order = ascending ? [0, 1, 2, 3] : [3, 2, 1, 0]
-        for (offset, string) in order.enumerated() {
-            let v = velocity * (1.0 - Double(offset) * 0.06)
-            schedule(.pluck(string: string, fret: 0, velocity: v, position: 0.5), atOffset: spacing * Double(offset))
-        }
-    }
-
-    /// Wheel (轮指): the five fingers thrown in turn — index, middle, ring,
-    /// little, thumb — one cycle being five plucks with the accent on the
-    /// first, each finger at its own spot and its own weight. See
-    /// WheelFinger for why five rather than four: a four-finger cycle falls
-    /// into 2 + 2 pairs and sounds like tan-tiao (弹挑).
-    func tremolo(string: Int, fret: Int, rate: Double, duration: Double, velocity: Double = 0.5) {
-        let count = max(1, Int(rate * duration))
-        let fingers = WheelFinger.allCases
-        for index in 0..<count {
-            let time = duration * Double(index) / Double(count)
-            let finger = fingers[index % fingers.count]
-            schedule(.pluck(string: string, fret: fret,
-                            velocity: velocity * finger.velocityScale,
-                            position: finger.position), atOffset: time)
-        }
-    }
-
-    func bend(string: Int, to frequency: Double) {
-        schedule(.bend(string: string, to: frequency), atOffset: 0)
-    }
-
-    func damp(string: Int) {
-        schedule(.damp(string: string), atOffset: 0)
-    }
-
-    /// Tan-Tiao (弹挑): the string is struck again and again, alternating
-    /// outward (tan, brighter) and inward (tiao, darker) `interval` seconds
-    /// apart, for `duration` seconds — the classic continuous 弹挑 roll.
-    func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5, interval: Double = 0.5, duration: Double = 5.0) {
-        var t = 0.0
-        var outward = true
-        while t < duration {
-            let pos = outward ? min(0.92, position + 0.12) : max(0.08, position - 0.12)
-            let v = outward ? velocity : velocity * 0.9
-            schedule(.pluck(string: string, fret: fret, velocity: v, position: pos), atOffset: t)
-            t += interval
-            outward.toggle()
-        }
-    }
-
-    func dampAll() {
-        schedule(.dampAll, atOffset: 0)
-    }
-}
-
 /// The main-thread side that wires PipaSynth into the phone's real-time audio
 /// engine.
 ///
@@ -305,9 +116,12 @@ final class AudioEngine: ObservableObject {
         core.strum(ascending: ascending, velocity: velocity)
     }
 
-    func tremolo(string: Int, fret: Int, rate: Double, duration: Double, velocity: Double = 0.5) {
+    /// Wheel (轮指): one string taken through a whole passage of cycles. Each
+    /// cycle is the five fingers thrown in turn, so five cycles are
+    /// twenty-five plucks and take 25 / rate seconds.
+    func tremolo(string: Int, fret: Int, rate: Double, cycles: Double, velocity: Double = 0.5) {
         ensureStarted()
-        core.tremolo(string: string, fret: fret, rate: rate, duration: duration, velocity: velocity)
+        core.tremolo(string: string, fret: fret, rate: rate, cycles: cycles, velocity: velocity)
     }
 
     func bend(string: Int, to frequency: Double) {
@@ -326,6 +140,34 @@ final class AudioEngine: ObservableObject {
     func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5, interval: Double = 0.5, duration: Double = 5.0) {
         ensureStarted()
         core.tanTiao(string: string, fret: fret, velocity: velocity, position: position, interval: interval, duration: duration)
+    }
+
+    // MARK: - Sustained rolls (continuous mode)
+
+    /// Start a roll that keeps throwing strokes until it is stopped. The
+    /// strokes fall on the string and position given here until the roll is
+    /// moved elsewhere.
+    func rollStart(kind: RollKind, string: Int, fret: Int, interval: Double,
+                   velocity: Double, position: Double = 0.5) {
+        ensureStarted()
+        core.rollStart(kind: kind, string: string, fret: fret, interval: interval,
+                       velocity: velocity, position: position)
+    }
+
+    /// Move a running roll to another string or position. The next stroke
+    /// sounds the new pitch.
+    func rollMove(string: Int, fret: Int) {
+        core?.rollMove(string: string, fret: fret)
+    }
+
+    /// Change the stroke spacing of a running roll.
+    func rollSetTempo(_ interval: Double) {
+        core?.rollSetTempo(interval)
+    }
+
+    /// Stop a running roll. Strings already sounding keep ringing.
+    func rollStop() {
+        core?.rollStop()
     }
 
     func dampAll() {

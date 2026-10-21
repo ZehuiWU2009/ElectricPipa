@@ -20,6 +20,26 @@ struct PipaView: View {
     @State private var showSettings = false
     @State private var showPositions = false
 
+    /// Continuous mode. With it on, 弹挑 and 轮指 keep playing until they are
+    /// stopped, and a touch on the strings moves them to a new note.
+    @State private var continuous = false
+
+    /// The technique currently rolling, nil when nothing is. Only the view
+    /// writes this, so it always matches what the player pressed.
+    @State private var rolling: RollKind? = nil
+
+    /// Bumped whenever a roll stops, which cancels the visual beat chain.
+    @State private var rollGeneration = 0
+
+    /// One press of 轮指 takes the string through this many full cycles. A
+    /// cycle is the five fingers thrown once, so five cycles are twenty-five
+    /// plucks and take 25 / rate seconds.
+    private static let wheelCycles = 5
+
+    /// A rolling string is re-struck visually on every stroke, so a long tail
+    /// keeps it alive for as long as the roll runs.
+    private static let rollVibDuration = 6.0
+
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width > geometry.size.height
@@ -42,6 +62,9 @@ struct PipaView: View {
             .padding(.bottom, 12)
             .frame(maxWidth: 1000)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onChange(of: wheelRate) { _, _ in retempo() }
+            .onChange(of: tanTiaoBPM) { _, _ in retempo() }
+            .onChange(of: continuous) { _, on in if !on { stopRoll() } }
         }
         .background(background.ignoresSafeArea())
         .foregroundStyle(PipaPalette.ink)
@@ -120,7 +143,7 @@ struct PipaView: View {
                     .foregroundStyle(PipaPalette.cinnabar)
                 Rectangle().fill(PipaPalette.gold.opacity(0.4)).frame(width: 24, height: 1)
             }
-            Text(audio.isRunning ? "轻点琴弦 · 横划扫拂" : "轻触琴弦，开始演奏")
+            Text(hintText)
                 .font(.system(size: 11)).foregroundStyle(PipaPalette.muted)
         }
     }
@@ -130,19 +153,33 @@ struct PipaView: View {
         return "\(PipaTuning.stringNames[selection.string]) · \(PipaTuning.positionName(selection.fret)) · \(PipaTuning.noteName(midi))"
     }
 
+    /// What the line under the note is telling the player right now.
+    private var hintText: String {
+        if let kind = rolling {
+            let name = kind == .wheel ? "轮指" : "弹挑"
+            return "\(name)连续 · 点按琴弦换弦换品 · 止音停止"
+        }
+        if continuous { return "连续模式 · 弹挑与轮指将持续发声" }
+        return audio.isRunning ? "轻点琴弦 · 横划扫拂" : "轻触琴弦，开始演奏"
+    }
+
     private var controls: some View {
         VStack(spacing: 14) {
             HStack(spacing: 7) {
-                techniqueButton("弹挑", symbol: "arrow.left.arrow.right") { tanTiaoAndAnimate() }
-                techniqueButton("轮指", symbol: "repeat") { wheelAndAnimate() }
+                techniqueButton("弹挑", symbol: "arrow.left.arrow.right",
+                                active: rolling == .tanTiao) { tanTiaoAndAnimate() }
+                techniqueButton("轮指", symbol: "repeat",
+                                active: rolling == .wheel) { wheelAndAnimate() }
                 techniqueButton("扫弦", symbol: "arrow.right") { strumAndAnimate(sao: true) }
                 techniqueButton("拂弦", symbol: "arrow.left") { strumAndAnimate(sao: false) }
-                techniqueButton("止音", symbol: "pause") { audio.dampAll(); vib = Array(repeating: StringVib(), count: 4) }
+                techniqueButton("止音", symbol: "pause", active: rolling != nil) { silence() }
             }
-            HStack {
+            HStack(spacing: 8) {
                 Text("四弦 · 六相 · 二十五品")
                     .font(.system(size: 10)).foregroundStyle(PipaPalette.muted)
-                Spacer()
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                continuousToggle
                 Button { showPositions = true } label: {
                     Label("音位面板", systemImage: "square.grid.3x3")
                         .font(.system(size: 12, weight: .medium))
@@ -152,18 +189,39 @@ struct PipaView: View {
         }
     }
 
-    private func techniqueButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+    private func techniqueButton(_ title: String, symbol: String, active: Bool = false,
+                                 action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Image(systemName: symbol).font(.system(size: 16, weight: .light))
-                    .foregroundStyle(PipaPalette.cinnabar)
+                    .foregroundStyle(active ? PipaPalette.paper : PipaPalette.cinnabar)
                 Text(title).font(.system(size: 13, weight: .medium, design: .serif))
-                    .foregroundStyle(PipaPalette.ink)
+                    .foregroundStyle(active ? PipaPalette.paper : PipaPalette.ink)
             }
             .frame(maxWidth: .infinity).frame(height: 67)
-            .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).stroke(PipaPalette.gold.opacity(0.18), lineWidth: 0.7))
+            .background(active ? PipaPalette.cinnabar : Color.white.opacity(0.55),
+                        in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13)
+                .stroke(active ? PipaPalette.cinnabar : PipaPalette.gold.opacity(0.18), lineWidth: 0.7))
         }.buttonStyle(.plain).accessibilityLabel(title)
+    }
+
+    /// The continuous-mode switch. On, the two roll techniques keep playing
+    /// until they are stopped; off, each press is a single passage as before.
+    private var continuousToggle: some View {
+        Button {
+            continuous.toggle()
+        } label: {
+            Label("连续模式", systemImage: continuous ? "infinity" : "infinity.circle")
+                .font(.system(size: 12, weight: .medium))
+                .frame(minHeight: 44)
+                .padding(.horizontal, 10)
+                .foregroundStyle(continuous ? PipaPalette.paper : PipaPalette.muted)
+                .background(continuous ? PipaPalette.cinnabar : Color.white.opacity(0.55),
+                            in: Capsule())
+                .overlay(Capsule().stroke(PipaPalette.gold.opacity(0.18), lineWidth: 0.7))
+        }.buttonStyle(.plain)
+            .accessibilityLabel(continuous ? "关闭连续模式" : "开启连续模式")
     }
 
     private var settings: some View {
@@ -176,6 +234,11 @@ struct PipaView: View {
                 Section("技法速度") {
                     labelledSlider("弹挑速度", value: $tanTiaoBPM, range: 40...480) { "\(Int($0)) BPM" }
                     labelledSlider("轮指速率", value: $wheelRate, range: 4...16) { "\(Int($0)) 次 / 秒" }
+                }
+                Section("连续模式") {
+                    Toggle("弹挑与轮指持续发声", isOn: $continuous)
+                    Text("开启后，弹挑和轮指会一直演奏下去。在琴弦或音位面板上点按，即可换弦、换相、换品，声音跟着走到新音位；单击止音，或切换到别的指法，才会停止。再按一次正在演奏的指法，也可以停下。")
+                        .font(.subheadline).foregroundStyle(PipaPalette.muted)
                 }
                 Section {
                     Text("轻点相品选择音高，轻点下方弦段弹奏空弦。横划琴弦可扫拂；高把位可在音位面板中准确演奏。")
@@ -239,10 +302,17 @@ struct PipaView: View {
     }
 
     private func play(string: Int, fret: Int, position: Double) {
-        audio.pluck(string: string, fret: fret, velocity: 0.85, position: position)
         selection = (string, fret)
         litCell = (string, fret)
-        kick(string: string, fret: fret)
+        kick(string: string, fret: fret,
+             duration: rolling == nil ? 0.45 : Self.rollVibDuration, freq: 9)
+        if rolling != nil {
+            // Under a roll the touch is the left hand moving: the roll changes
+            // note with it, and the new pitch speaks at once rather than
+            // waiting for the next stroke to come around.
+            audio.rollMove(string: string, fret: fret)
+        }
+        audio.pluck(string: string, fret: fret, velocity: 0.85, position: position)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
             if litCell?.string == string, litCell?.fret == fret { litCell = nil }
         }
@@ -272,6 +342,8 @@ struct PipaView: View {
     /// order, so each string sounds and glows exactly where the blade crosses
     /// it.
     private func strumAndAnimate(sao: Bool, start: (string: Int, fret: Int)? = nil) {
+        // A sweep is another technique: it takes over from any running roll.
+        if rolling != nil { stopRoll() }
         let maxFret = PipaGeometry.positionCount - 1
         let origin = start ?? selection
         let f0 = min(max(origin.fret, 0), maxFret)
@@ -301,20 +373,32 @@ struct PipaView: View {
         }
     }
 
-    /// Wheel (轮指): a single string kept ringing for the tremolo duration,
-    /// with a particle burst at its fret.
+    /// Wheel (轮指). In continuous mode the five fingers keep being thrown
+    /// until the roll is stopped; otherwise one press takes the string through
+    /// a whole passage, five cycles with a particle burst at the end of it.
     private func wheelAndAnimate() {
-        audio.tremolo(string: selection.string, fret: selection.fret, rate: wheelRate, duration: 1.8)
-        kick(string: selection.string, fret: selection.fret, duration: 1.8, freq: 7)
+        if continuous {
+            startRoll(.wheel)
+            return
+        }
+        audio.tremolo(string: selection.string, fret: selection.fret,
+                      rate: wheelRate, cycles: Double(Self.wheelCycles))
+        let duration = Double(Self.wheelCycles * WheelFinger.allCases.count) / wheelRate
+        kick(string: selection.string, fret: selection.fret, duration: duration, freq: 7)
         burst = BurstSignal(token: burst.token + 1, string: selection.string, fret: selection.fret)
     }
 
-    /// Tan-Tiao (弹挑): the string is struck outward then inward, again and
-    /// again for five seconds. One metronome beat is one full 弹+挑 pair —
-    /// two strokes — so at 120 BPM the string takes 240 strokes (120 pairs)
-    /// per minute, and each stroke lands 30 / BPM seconds after the previous
-    /// one. Each stroke throws a particle burst at its fret.
+    /// Tan-Tiao (弹挑). Continuous mode keeps the outward and inward strikes
+    /// coming until the roll is stopped; otherwise one press runs the classic
+    /// five-second roll, one metronome beat per 弹 + 挑 pair — two strokes —
+    /// so at 120 BPM the string takes 240 strokes (120 pairs) per minute, each
+    /// stroke landing 30 / BPM seconds after the previous one. Every stroke
+    /// throws a particle burst at its fret.
     private func tanTiaoAndAnimate() {
+        if continuous {
+            startRoll(.tanTiao)
+            return
+        }
         let stroke = 30.0 / tanTiaoBPM
         let duration = 5.0
         audio.tanTiao(string: selection.string, fret: selection.fret,
@@ -329,6 +413,69 @@ struct PipaView: View {
                 burst = BurstSignal(token: burst.token + 1,
                                    string: selection.string, fret: selection.fret)
             }
+        }
+    }
+
+    // MARK: - Continuous mode
+
+    /// Seconds between strokes. The wheel divides one second by its rate;
+    /// tan-tiao halves one metronome beat, because a beat is a full 弹 + 挑 pair.
+    private func intervalFor(_ kind: RollKind) -> Double {
+        kind == .wheel ? 1.0 / wheelRate : 30.0 / tanTiaoBPM
+    }
+
+    /// Start a roll that keeps throwing strokes until it is stopped. Pressing
+    /// the technique that is already rolling stops it, which gives the player
+    /// a way out without reaching for 止音.
+    private func startRoll(_ kind: RollKind) {
+        if rolling == kind {
+            stopRoll()
+            return
+        }
+        rolling = kind
+        let interval = intervalFor(kind)
+        audio.rollStart(kind: kind, string: selection.string, fret: selection.fret,
+                        interval: interval,
+                        velocity: kind == .wheel ? 0.5 : 0.7,
+                        position: 0.5)
+        kick(string: selection.string, fret: selection.fret,
+             duration: Self.rollVibDuration, freq: kind == .wheel ? 7 : 8)
+        burst = BurstSignal(token: burst.token + 1, string: selection.string, fret: selection.fret)
+        scheduleBeats(interval: max(interval, 0.09))
+    }
+
+    /// Stop the roll. Strings already sounding keep ringing.
+    private func stopRoll() {
+        rolling = nil
+        rollGeneration += 1
+        audio.rollStop()
+    }
+
+    /// 止音: silence everything and end any running roll.
+    private func silence() {
+        stopRoll()
+        audio.dampAll()
+        vib = Array(repeating: StringVib(), count: 4)
+    }
+
+    /// Pass a tempo change straight through to a running roll, so the slider
+    /// takes effect without the roll having to be restarted.
+    private func retempo() {
+        if let kind = rolling { audio.rollSetTempo(intervalFor(kind)) }
+    }
+
+    /// One shimmer at the fret per stroke of a running roll. The chain cancels
+    /// itself the moment the roll stops, because the generation it carries no
+    /// longer matches the current one.
+    private func scheduleBeats(interval: Double) {
+        let generation = rollGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval) {
+            guard generation == rollGeneration, let kind = rolling else { return }
+            kick(string: selection.string, fret: selection.fret,
+                 duration: Self.rollVibDuration, freq: kind == .wheel ? 7 : 8)
+            burst = BurstSignal(token: burst.token + 1,
+                                string: selection.string, fret: selection.fret)
+            scheduleBeats(interval: max(intervalFor(kind), 0.09))
         }
     }
 }
