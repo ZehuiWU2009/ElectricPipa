@@ -1,17 +1,24 @@
 import SwiftUI
 
-/// Coordinates measured on the 978 × 1609 transparent instrument asset.
+/// Coordinates measured on the 506 × 1557 transparent instrument asset.
 /// Drawing and hit testing both use the same aspect-fit rectangle. These are
 /// visual landmarks, independent of the equal-tempered audio pitch table.
+///
+/// The asset used to be a 978 × 1609 canvas with wide transparent margins on
+/// both sides — the instrument itself only occupied 502 of those 978 pixels.
+/// Fitting the whole canvas therefore shrank the instrument to half the width
+/// it could have taken. The margins are cropped away now, and every coordinate
+/// below is measured on the cropped canvas: old canvas minus the (236, 12)
+/// crop origin.
 enum PipaGeometry {
     static let stringCount = 4
     static let positionCount = PipaTuning.positionCount
-    static let referenceSize = CGSize(width: 978, height: 1609)
+    static let referenceSize = CGSize(width: 506, height: 1557)
     static let stopRows: [CGFloat] = [
-        280, 350, 410, 470, 524, 576, 627,
-        670, 710, 750, 786, 821, 854, 885, 913, 940, 969,
-        995, 1020, 1042, 1065, 1085, 1104, 1123, 1142,
-        1159, 1175, 1190, 1205, 1218, 1232, 1246
+        268, 338, 398, 458, 512, 564, 615,
+        658, 698, 738, 774, 809, 842, 873, 901, 928, 957,
+        983, 1008, 1030, 1053, 1073, 1092, 1111, 1130,
+        1147, 1163, 1178, 1193, 1206, 1220, 1234
     ]
 
     static func instrumentRect(in bounds: CGRect) -> CGRect {
@@ -25,15 +32,15 @@ enum PipaGeometry {
         CGPoint(x: rect.minX + x / referenceSize.width * rect.width,
                 y: rect.minY + y / referenceSize.height * rect.height)
     }
-    static func nutY(in rect: CGRect) -> CGFloat { point(x: 0, y: 280, in: rect).y }
-    static func bridgeY(in rect: CGRect) -> CGFloat { point(x: 0, y: 1453, in: rect).y }
+    static func nutY(in rect: CGRect) -> CGFloat { point(x: 0, y: 268, in: rect).y }
+    static func bridgeY(in rect: CGRect) -> CGFloat { point(x: 0, y: 1441, in: rect).y }
     static func positionY(_ position: Int, in rect: CGRect) -> CGFloat {
         point(x: 0, y: stopRows[min(max(position, 0), stopRows.count - 1)], in: rect).y
     }
     static func stringX(_ string: Int, atY y: CGFloat, in rect: CGRect) -> CGFloat {
         let t = min(max((y - nutY(in: rect)) / (bridgeY(in: rect) - nutY(in: rect)), 0), 1)
-        let nutX = CGFloat(470 + string * 13)
-        let bridgeX = CGFloat(445 + string * 30)
+        let nutX = CGFloat(234 + string * 13)
+        let bridgeX = CGFloat(209 + string * 30)
         return point(x: nutX + (bridgeX - nutX) * t, y: 0, in: rect).x
     }
     static func nearest(location: CGPoint, in rect: CGRect) -> (string: Int, fret: Int)? {

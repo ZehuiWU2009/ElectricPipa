@@ -46,18 +46,29 @@ struct PipaView: View {
             VStack(spacing: 0) {
                 header
                 if wide {
+                    // Landscape: the board keeps the full height of the device
+                    // and the controls stand in a column beside it, as they
+                    // always have. Five techniques stack too tall for a
+                    // landscape phone, so they stay in one row here.
                     HStack(spacing: 24) {
                         instrument
                         VStack(spacing: 20) { noteReadout; controls }
                             .frame(width: min(340, geometry.size.width * 0.42))
                     }
                 } else {
-                    instrument
-                    noteReadout.padding(.bottom, 16)
-                    controls
+                    // Portrait: the five techniques move out of the bottom of
+                    // the screen into a rail on the right — the two mode
+                    // buttons join them there, so the board keeps every point
+                    // of height the old control stack used to eat.
+                    noteReadout.padding(.bottom, 12)
+                    HStack(spacing: 12) {
+                        instrument
+                        techniqueRail
+                            .frame(width: 78)
+                    }
                 }
             }
-            .padding(.horizontal, wide ? 28 : 22)
+            .padding(.horizontal, wide ? 28 : 20)
             .padding(.top, 12)
             .padding(.bottom, 12)
             .frame(maxWidth: 1000)
@@ -163,6 +174,28 @@ struct PipaView: View {
         return audio.isRunning ? "轻点琴弦 · 横划扫拂" : "轻触琴弦，开始演奏"
     }
 
+    /// The rail beside the board in portrait: the five techniques as square
+    /// tiles, then the two mode buttons in a quieter version of the same
+    /// language. Keeping every control in one column means the player's hand
+    /// stays in one place — the board is the only thing that moves under the
+    /// fingers — and the instrument keeps the full height of the device.
+    private var techniqueRail: some View {
+        VStack(spacing: 10) {
+            techniqueButton("弹挑", symbol: "arrow.left.arrow.right",
+                            active: rolling == .tanTiao) { tanTiaoAndAnimate() }
+            techniqueButton("轮指", symbol: "repeat",
+                            active: rolling == .wheel) { wheelAndAnimate() }
+            techniqueButton("扫弦", symbol: "arrow.right") { strumAndAnimate(sao: true) }
+            techniqueButton("拂弦", symbol: "arrow.left") { strumAndAnimate(sao: false) }
+            techniqueButton("止音", symbol: "pause", active: rolling != nil) { silence() }
+            modeButton("连续模式", symbol: continuous ? "infinity" : "infinity.circle",
+                       active: continuous) { continuous.toggle() }
+            modeButton("音位面板", symbol: "square.grid.3x3") { showPositions = true }
+        }
+    }
+
+    /// Landscape controls: the five techniques in one row, the mode buttons
+    /// under them. The portrait rail is the tall form of this.
     private var controls: some View {
         VStack(spacing: 14) {
             HStack(spacing: 7) {
@@ -189,6 +222,31 @@ struct PipaView: View {
         }
     }
 
+    /// One of the two mode buttons in the portrait rail. Same tile language as
+    /// the techniques but quieter — a lighter fill, a gold icon and a small
+    /// label — so the five techniques stay the loudest things on screen.
+    private func modeButton(_ title: String, symbol: String, active: Bool = false,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 15, weight: .light))
+                    .foregroundStyle(active ? PipaPalette.paper : PipaPalette.gold)
+                Text(title).font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(active ? PipaPalette.paper : PipaPalette.muted)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(active ? PipaPalette.cinnabar : Color.white.opacity(0.4),
+                        in: RoundedRectangle(cornerRadius: 11))
+            .overlay(RoundedRectangle(cornerRadius: 11)
+                .stroke(active ? PipaPalette.cinnabar : PipaPalette.gold.opacity(0.16), lineWidth: 0.7))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    /// One technique chip: a square tile, icon over label. Used in the portrait
+    /// rail and in the landscape row alike.
     private func techniqueButton(_ title: String, symbol: String, active: Bool = false,
                                  action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -198,7 +256,7 @@ struct PipaView: View {
                 Text(title).font(.system(size: 13, weight: .medium, design: .serif))
                     .foregroundStyle(active ? PipaPalette.paper : PipaPalette.ink)
             }
-            .frame(maxWidth: .infinity).frame(height: 67)
+            .frame(maxWidth: .infinity).frame(height: 66)
             .background(active ? PipaPalette.cinnabar : Color.white.opacity(0.55),
                         in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)

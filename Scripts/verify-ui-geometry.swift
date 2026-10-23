@@ -13,7 +13,7 @@ struct GeometryVerification {
             let rect = PipaGeometry.instrumentRect(in: bounds)
             precondition(rect.minX >= -0.001 && rect.minY >= -0.001)
             precondition(rect.maxX <= bounds.maxX + 0.001 && rect.maxY <= bounds.maxY + 0.001)
-            precondition(abs(rect.width / rect.height - 978.0 / 1609.0) < 0.0001)
+            precondition(abs(rect.width / rect.height - 506.0 / 1557.0) < 0.0001)
             for string in 0..<4 {
                 for fret in 0..<PipaGeometry.positionCount {
                     let y = PipaGeometry.positionY(fret, in: rect)
