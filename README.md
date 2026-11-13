@@ -104,7 +104,7 @@ The signal path is short and every stage is on device. The main thread only forw
 ```mermaid
 flowchart TB
     subgraph MAIN ["Main thread"]
-        U1["PipaBoardView<br/>vector Pipa panel, 4 strings x 32 stops"]
+        U1["Pipa3DBoardView / PipaBoardView<br/>3D photo-textured board (2D fallback), 4 strings x 32 stops"]
         U2["PipaView<br/>technique buttons, brightness and volume"]
         U3["AudioEngine (@MainActor)<br/>session and graph wiring"]
     end
@@ -125,7 +125,7 @@ flowchart TB
 
 | Stage | Responsibility | Key file |
 | --- | --- | --- |
-| Interaction | Touch the drawn Pipa directly; forwards intent only | `App/FretboardView.swift` (`PipaBoardView`), `App/PipaView.swift` |
+| Interaction | Touch the drawn Pipa directly; forwards intent only | `App/FretboardView.swift` (`PipaBoardView`), `App/Pipa3DBoardView.swift` (`Pipa3DBoardView`), `App/Pipa3DGeometry.swift`, `App/PipaView.swift` |
 | Graph wiring | Audio session, source node format, render block factory | `Audio/AudioEngine.swift` |
 | Event queue | Lock-free SPSC ring buffer, sample-accurate scheduling | `Audio/AudioEngine.swift` (`PipaAudioCore`) |
 | String model | Digital waveguide, loop low-pass, all-pass fractional delay | `Core/PipaString.swift` |
@@ -137,7 +137,7 @@ flowchart TB
 
 | Module | Description |
 | --- | --- |
-| Instrument panel | A vector-drawn Pipa: half-pear soundboard with wood grain, four strings with sag, six xiang, twenty-five frets, bridge and pegs. Touch anywhere near a string and the nearest stop sounds | `App/FretboardView.swift`, `App/PipaGeometry.swift` |
+| Instrument panel | A 3D camera-projected Pipa built from the real instrument photo, rotatable and pinch-zoomable, with a 2D photo fallback. Four strings with sag, six xiang, twenty-five frets; touch anywhere near a string and the nearest stop sounds | `App/Pipa3DBoardView.swift`, `App/Pipa3DGeometry.swift`, `App/FretboardView.swift` |
 | Technique buttons | Strum up (fu), strum down (sao), tremolo (lun), tan-tiao (弹挑) and damping, each triggering on the sample-accurate event queue |
 | Timbre and volume | Brightness slider moves the loop low-pass of all four strings; volume slider moves master gain. Both take effect on the next rendered sample |
 | Offline renderer | Command-line tool that verifies tuning across the whole range and writes the seven demo WAV pieces |
@@ -150,7 +150,7 @@ flowchart TB
 - `vDSP_conv` from the Accelerate framework for the commuted-synthesis convolution
 - 48 kHz preferred session rate; the source node follows the engine's real output format, and pitch is defined in Hz so any rate stays correct
 - The offline renderer is plain Swift compiled by hand with `swiftc`, outside the Xcode target
-- The instrument panel is drawn as vector graphics in pure SwiftUI: soundboard, strings and hardware are all paths, with no image assets and no third-party drawing dependency
+- The instrument panel is a SwiftUI Canvas view. The default board is a 3D camera projection of the real instrument photo, rotatable and pinch-zoomable, with a 2D photo fallback; string geometry, the 32 frets and hit testing live in `App/Pipa3DGeometry.swift`. No third-party drawing dependency.
 
 ## Project Structure
 
@@ -167,9 +167,16 @@ ElectricPipa/
 ├── App/                      # SwiftUI interface
 │   ├── ElectricPipaApp.swift
 │   ├── PipaView.swift        # Main screen, technique buttons, brightness and volume
-│   ├── FretboardView.swift   # Vector Pipa panel: soundboard, strings, stops, touch gestures
-│   ├── PipaGeometry.swift    # Panel geometry: outline, stop positions at 2^(-n/12), hit testing
+│   ├── FretboardView.swift   # 2D photo Pipa panel: soundboard, strings, stops, touch gestures
+│   ├── Pipa3DGeometry.swift  # 3D geometry: four string segments, 32 fret planes, camera, ray-cast hit
+│   ├── Pipa3DBoardView.swift # 3D photo-textured, rotatable board; same interface as the 2D panel
+│   ├── PipaGeometry.swift    # 2D panel geometry and hit testing
 │   └── Info.plist
+├── Scripts/                  # Offline verification and 3DGS anchor export
+│   ├── verify-ui-geometry.swift
+│   ├── verify-3d-geometry.swift
+│   ├── verify-3d-app-geometry.swift
+│   └── export_fret_anchors.py
 ├── Renderer/
 │   └── main.swift            # Offline renderer, tuning verification, demo WAV output
 ├── PipaAudio/                # Seven generated WAV pieces
@@ -194,7 +201,7 @@ xcrun swiftc -swift-version 6 -o PipaRenderer \
 
 It prints the tuning verification tables and writes the seven WAV pieces.
 
-> Note: the Bundle Identifier is still the placeholder `com.example.electricpipa`. Change it before debugging on a real device or shipping.
+> Note: the Bundle Identifier is `com.zehuiwu.electricpipa`. Swap in your own team's identifier before shipping.
 
 ## Version History
 
@@ -250,11 +257,26 @@ Each round below was driven by something the previous round could not do. The fi
 - Strum (fu/sao) and tremolo (lun) animate the strings in sequence or in a sustained ring, matching the audio order and spacing. A sideways drag across the strings triggers the same animation through the new `onStrum` callback.
 - Added tan-tiao (弹挑): one string struck twice in quick succession, first outward then inward about 85 ms apart, with the string visibly snapping back and forth. `AudioEngine.tanTiao` schedules the two plucks with slightly different right-hand positions, and a new 弹挑 button drives both the sound and the reversed animation.
 
+### v2.0 · Photo-derived instrument panel (2026-10-20)
+
+- The vector Pipa panel is replaced by a photo-derived instrument asset: the real instrument photo is cropped to its alpha bounds and becomes the board, so the drawn surface and the touch coordinates share one source of truth
+- A light, Chinese-inspired interface replaces the earlier dark theme, with a large-target note panel that shows the current stop as string, position and note name
+- See [UI-UPDATE.md](UI-UPDATE.md) for the full UI change log
+
+### v2.1 · 3D rotatable board, photo texture and real-device audio (2026-11-13)
+
+- New `App/Pipa3DGeometry.swift` upgrades the 2D panel constants to four 3D string segments and 32 fret planes, with a perspective camera, ray-cast hit testing and a procedural pear-shaped body outline
+- Verified 32,256 hits across 4 screen sizes × 21 angle pairs × 3 view transforms; the 3D round-trip error is zero, and the legacy 2D lookup collapses to 7% accuracy once the model is dragged, which is what motivated the upgrade
+- New `App/Pipa3DBoardView.swift` is a drop-in for the photo board with the same interface: rotatable (±20° yaw, ±14° pitch) and pinch-zoomable (0.85×–1.6×), carrying the string/fret animations, note labels and cinnabar hit marker. The real instrument photo is texture-mapped onto the 3D body through a horizontal-band affine approximation — exact on the front view, under 1 pt residual when tilted
+- `AudioEngine` is now robust on real devices: the audio core is optional, `ensureStarted()` returns a Bool and writes a `startupError`, and all six play-entry points guard against a failed session instead of force-unwrapping and crashing on the first pluck. Audio pre-starts on appearance, with a visible error banner on failure
+- `Info.plist` adds `UIRequiresFullScreen` and drops the legacy `armv7` capability, clearing the iPad multitasking orientation warning
+- New `Scripts/`: `verify-3d-app-geometry.swift` (regression for the shipping geometry), `verify-3d-geometry.swift`, and `export_fret_anchors.py` (semantic-3DGS 32-fret anchor export used in the interaction study)
+
 ## Known Limitations / To Be Improved
 
 - The five body resonances are hand-set estimates, not measurements. The planned next step is differentiable parameter identification: port the same Karplus-Strong core to PyTorch or JAX and fit the per-string 60 dB tail, the slope of the excitation spectrum and the body transfer function by gradient descent from recordings of the four open strings at three velocities, then write the results back into `PipaString` and `PipaBody`
 - The excitation is white noise shaped by a comb filter, which is where the remaining guitar-like colour comes from. A real nail pluck has a spectrum that falls with frequency, and that slope is one of the parameters the differentiable fitting will supply
-- The Bundle Identifier is still a placeholder
+- The Bundle Identifier is `com.zehuiwu.electricpipa`; swap in your own team's identifier before shipping
 - The brightness slider moves all four strings together; per-string brightness is already in the engine and only needs surfacing in the UI
 - Audio on the simulator works, but a real device is the better reference for how the tone sits
 
@@ -361,7 +383,7 @@ Source code of a personal project; discussion and learning welcome.
 ```mermaid
 flowchart TB
     subgraph MAIN ["主线程"]
-        U1["PipaBoardView<br/>矢量琵琶面板,4 弦 × 32 音位"]
+        U1["Pipa3DBoardView / PipaBoardView<br/>3D 照片琴面（2D 兜底）,4 弦 × 32 音位"]
         U2["PipaView<br/>技法按钮、明暗与音量"]
         U3["AudioEngine (@MainActor)<br/>会话与音频图装配"]
     end
@@ -382,7 +404,7 @@ flowchart TB
 
 | 阶段 | 职责 | 关键文件 |
 | --- | --- | --- |
-| 交互 | 直接在绘制的琵琶上触摸;只转发意图 | `App/FretboardView.swift`（`PipaBoardView`）、`App/PipaView.swift` |
+| 交互 | 直接在绘制的琵琶上触摸;只转发意图 | `App/FretboardView.swift`（`PipaBoardView`）、`App/Pipa3DBoardView.swift`（`Pipa3DBoardView`）、`App/Pipa3DGeometry.swift`、`App/PipaView.swift` |
 | 音频图装配 | 音频会话、源节点格式、渲染块工厂 | `Audio/AudioEngine.swift` |
 | 事件队列 | 无锁 SPSC 环形缓冲,样本精度调度 | `Audio/AudioEngine.swift`（`PipaAudioCore`） |
 | 弦模型 | 数字波导、环路低通、全通分数延迟 | `Core/PipaString.swift` |
@@ -394,7 +416,7 @@ flowchart TB
 
 | 模块 | 说明 |
 | --- | --- |
-| 琵琶面板 | 矢量绘制的整琴:半梨形琴身带木纹、四根带垂度的弦、六相二十五品、覆手与轸子。弦附近任意位置按下,最近音位发声 | `App/FretboardView.swift`、`App/PipaGeometry.swift` |
+| 琵琶面板 | 真实乐器照片经 3D 相机投影重建的琴面,可旋转、可双指缩放,并带 2D 照片兜底。四根带垂度的弦、六相二十五品;弦附近任意位置按下,最近音位发声 | `App/Pipa3DBoardView.swift`、`App/Pipa3DGeometry.swift`、`App/FretboardView.swift` |
 | 技法按钮 | 拂弦、扫弦、轮指、弹挑、止音,全部走样本精度事件队列 |
 | 音色与音量 | 明暗滑块统一移动四弦环路低通,音量滑块移动总增益,都在下一个渲染样本生效 |
 | 离线渲染器 | 命令行工具,做全音域音准校验并写出 7 段演示 WAV |
@@ -407,7 +429,7 @@ flowchart TB
 - Commuted Synthesis 的卷积用 Accelerate 框架的 `vDSP_conv`
 - 会话优先 48 kHz,源节点跟随引擎真实输出格式;音高以 Hz 定义,换采样率仍正确
 - 离线渲染器是纯 Swift,用 `swiftc` 手工编译,不在 Xcode target 里
-- 琵琶面板是纯 SwiftUI 矢量绘制:琴身、琴弦、硬件全是 path,无图片资源、无第三方绘图依赖
+- 琵琶面板是 SwiftUI Canvas 视图。默认琴面是真实乐器照片的 3D 相机投影,可旋转、可双指缩放,并带 2D 照片兜底;弦的几何、32 个品与命中测试都在 `App/Pipa3DGeometry.swift`。无第三方绘图依赖
 
 ## 项目结构
 
@@ -424,9 +446,16 @@ ElectricPipa/
 ├── App/                      # SwiftUI 界面
 │   ├── ElectricPipaApp.swift
 │   ├── PipaView.swift        # 主界面、技法按钮、明暗与音量
-│   ├── FretboardView.swift   # 矢量琵琶面板:琴身、琴弦、音位、触摸手势
-│   ├── PipaGeometry.swift    # 面板几何:轮廓、按 2^(-n/12) 排布的音位、命中测试
+│   ├── FretboardView.swift   # 2D 照片琵琶面板:琴身、琴弦、音位、触摸手势
+│   ├── Pipa3DGeometry.swift  # 3D 几何:四段弦、32 个品平面、相机、射线求交命中
+│   ├── Pipa3DBoardView.swift # 3D 照片贴图、可旋转的琴面,接口与 2D 面板一致
+│   ├── PipaGeometry.swift    # 2D 面板几何与命中测试
 │   └── Info.plist
+├── Scripts/                  # 离线校验与 3DGS 锚点导出
+│   ├── verify-ui-geometry.swift
+│   ├── verify-3d-geometry.swift
+│   ├── verify-3d-app-geometry.swift
+│   └── export_fret_anchors.py
 ├── Renderer/
 │   └── main.swift            # 离线渲染器、音准校验、演示 WAV 输出
 ├── PipaAudio/                # 已生成的 7 段 WAV
@@ -451,7 +480,7 @@ xcrun swiftc -swift-version 6 -o PipaRenderer \
 
 会打印全音域音准校验表,并写出 7 段 WAV。
 
-> 注意:Bundle Identifier 仍是占位值 `com.example.electricpipa`,真机调试或上架前必须改。
+> 注意:Bundle Identifier 现在是 `com.zehuiwu.electricpipa`,真机调试或上架前换成你自己的团队标识。
 
 ## 版本演进
 
@@ -507,11 +536,26 @@ xcrun swiftc -swift-version 6 -o PipaRenderer \
 - 扫弦（拂/扫）和轮指按音频顺序与间隔依次或持续摆动琴弦;横向拂过四弦经由新增的 `onStrum` 回调触发同样的动画。
 - 新增弹挑:单弦快速两下,先向外拨再向内挑,间隔约 85 毫秒,弦可见地来回弹动。`AudioEngine.tanTiao` 用略不同的右手拨弦位置排布两次拨弦,新的「弹挑」按钮同时驱动声音与反向动画。
 
+### v2.0 · 照片化琴面（2026-10-20）
+
+- 矢量面板换成照片化乐器素材:真实琵琶照片按 alpha 裁边后成为琴面,绘制表面与触摸坐标共用同一真值来源
+- 浅色、带中式韵味的界面取代此前的深色主题,并加大音位信息面板的触控目标,显示当前音位为「弦名 · 相品 · 音名」
+- 完整 UI 变更见 [UI-UPDATE.md](UI-UPDATE.md)
+
+### v2.1 · 三维琴面、照片贴图与真机音频健壮性（2026-11-13）
+
+- 新增 `App/Pipa3DGeometry.swift`,把二维面板常量升维成四段弦与 32 个品平面,带透视相机、射线求交命中与程序化半梨形琴身轮廓
+- 在 4 种屏幕尺寸 × 21 组角度 × 3 组视图变换下验证 32256 次命中全中,3D 往返误差为 0;沿用旧二维查表在模型被拖动时准确率跌到 7%,正是这次升维的动机
+- 新增 `App/Pipa3DBoardView.swift`,接口与照片面板完全一致:可旋转(偏航 ±20°、俯仰 ±14°)、可双指缩放(0.85×–1.6×),保留琴弦/品动画、音名标注与朱砂命中点。真实乐器照片以水平分带仿射近似贴到三维琴面——正面精确,倾斜时残差小于 1 pt
+- `AudioEngine` 真机健壮性:音频内核改为可选;`ensureStarted()` 返回 Bool 并写入 `startupError`;六个发声入口在会话启动失败时改为保护而非强制解包、首拨即崩。音频随界面出现预启动,失败时顶部显示红色提示
+- `Info.plist` 增加 `UIRequiresFullScreen` 并删除古董 `armv7` 能力,消除 iPad 多任务的方向警告
+- 新增 `Scripts/`:`verify-3d-app-geometry.swift`(工程内几何回归)、`verify-3d-geometry.swift`、`export_fret_anchors.py`(语义 3DGS 的 32 品锚点导出,用于交互研究)
+
 ## 已知限制 / 待改进
 
 - 五个琴体共振峰是手拍估值,不是实测。既定下一步是可微分参数辨识:把同一套 Karplus-Strong 内核移植到 PyTorch 或 JAX,用梯度下降从四根空弦 × 三档力度的录音中拟合每弦 60 dB 余音、激励谱下降斜率与琴体传递函数,结果写回 `PipaString` 与 `PipaBody`
 - 激励是白噪加梳状滤波,剩下的「吉他味」主要来自这里。真实义甲拨弦的频谱随频率下降,这条斜率正是可微分拟合要测的参数之一
-- Bundle Identifier 仍是占位值
+- Bundle Identifier 现在是 `com.zehuiwu.electricpipa`,上架前换成你自己的团队标识
 - 明暗滑块统一移动四根弦;分弦亮度引擎里已经有,只需在界面上暴露
 - 模拟器上音频可用,但音色落位以真机为更可靠的参考
 

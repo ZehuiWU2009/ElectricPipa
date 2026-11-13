@@ -19,6 +19,8 @@
 		C2440850858041CEB7052C83 /* ElectricPipaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03EDC09128B345BAA0850B7E /* ElectricPipaApp.swift */; };
 		DAD2E93954294FBE9DBC2B71 /* PipaTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6D4FE87D8CD4C6C9921ACD8 /* PipaTuning.swift */; };
 		F4A9B4AC6B4645308CF32008 /* PipaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520D5ED709B5433F90CA53F1 /* PipaBody.swift */; };
+		B3D0000100000000000000A2 /* Pipa3DGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000100000000000000A1 /* Pipa3DGeometry.swift */; };
+		B3D0000100000000000000A4 /* Pipa3DBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000100000000000000A3 /* Pipa3DBoardView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +38,8 @@
 		E5EBC9F1DF7046AA9CBC7C6E /* ElectricPipa.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ElectricPipa.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F1A2B3C4D5E60718293A4B5C /* PipaAudioCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaAudioCore.swift; sourceTree = "<group>"; };
 		F6D4FE87D8CD4C6C9921ACD8 /* PipaTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaTuning.swift; sourceTree = "<group>"; };
+		B3D0000100000000000000A1 /* Pipa3DGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pipa3DGeometry.swift; sourceTree = "<group>"; };
+		B3D0000100000000000000A3 /* Pipa3DBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pipa3DBoardView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +61,8 @@
 				7892EBFB8AE2443E850BC230 /* PipaView.swift */,
 				DA9A9329E73945E8B2FFD698 /* FretboardView.swift */,
 				6635CEBCB09542E49F0226BA /* PipaGeometry.swift */,
+				B3D0000100000000000000A1 /* Pipa3DGeometry.swift */,
+				B3D0000100000000000000A3 /* Pipa3DBoardView.swift */,
 				DB164EA7642945D693A8CDC4 /* Info.plist */,
 			);
 			path = App;
@@ -187,6 +193,8 @@
 				A74AB7EE37EB4FDDA52466AC /* PipaView.swift in Sources */,
 				90DB97F889D94FD4934628A1 /* FretboardView.swift in Sources */,
 				0CD3CFEA6EC04042BBC70A29 /* PipaGeometry.swift in Sources */,
+				B3D0000100000000000000A2 /* Pipa3DGeometry.swift in Sources */,
+				B3D0000100000000000000A4 /* Pipa3DBoardView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

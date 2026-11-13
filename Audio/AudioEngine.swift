@@ -19,11 +19,14 @@ import Foundation
 /// real-time thread.
 @MainActor
 final class AudioEngine: ObservableObject {
-    private var core: PipaAudioCore!
+    private var core: PipaAudioCore?
     private let engine = AVAudioEngine()
     private let preferredSampleRate: Double = 48000
     private var started = false
 
+    /// Surfaced in the UI when the audio session refuses to start, so a silent
+    /// instrument is never mistaken for a broken view.
+    @Published var startupError: String?
     @Published var isRunning = false
     @Published var masterGain: Float = 0.5 {
         didSet { core?.setMasterGain(masterGain) }
@@ -34,14 +37,20 @@ final class AudioEngine: ObservableObject {
 
     init() {}
 
-    func ensureStarted() {
-        guard !started else { return }
+    @discardableResult
+    func ensureStarted() -> Bool {
+        guard !started else { return core != nil }
         started = true
         do {
             try start()
+            startupError = nil
+            return true
         } catch {
             started = false
+            core = nil
+            startupError = String(describing: error)
             print("音频引擎启动失败：\(error)")
+            return false
         }
     }
 
@@ -106,13 +115,18 @@ final class AudioEngine: ObservableObject {
 
     // MARK: - Performance interface
 
+    /// Every entry point guards on a live kernel. Starting the audio session is
+    /// allowed to fail on a real device — a call, another app holding the
+    /// session, a route change — and the old force-unwrap turned that into a
+    /// crash on the very first pluck. A failed start now leaves the view alive
+    /// and reports the reason through `startupError`.
     func pluck(string: Int, fret: Int, velocity: Double = 0.85, position: Double = 0.5) {
-        ensureStarted()
+        guard ensureStarted(), let core else { return }
         core.pluck(string: string, fret: fret, velocity: velocity, position: position)
     }
 
     func strum(ascending: Bool = true, velocity: Double = 0.78) {
-        ensureStarted()
+        guard ensureStarted(), let core else { return }
         core.strum(ascending: ascending, velocity: velocity)
     }
 
@@ -120,12 +134,12 @@ final class AudioEngine: ObservableObject {
     /// cycle is the five fingers thrown in turn, so five cycles are
     /// twenty-five plucks and take 25 / rate seconds.
     func tremolo(string: Int, fret: Int, rate: Double, cycles: Double, velocity: Double = 0.5) {
-        ensureStarted()
+        guard ensureStarted(), let core else { return }
         core.tremolo(string: string, fret: fret, rate: rate, cycles: cycles, velocity: velocity)
     }
 
     func bend(string: Int, to frequency: Double) {
-        ensureStarted()
+        guard ensureStarted(), let core else { return }
         core.bend(string: string, to: frequency)
     }
 
@@ -138,7 +152,7 @@ final class AudioEngine: ObservableObject {
     /// beat is one 弹+挑 pair — two strokes — so the UI passes
     /// interval = 30 / BPM (at 120 BPM, 240 strokes per minute).
     func tanTiao(string: Int, fret: Int, velocity: Double = 0.7, position: Double = 0.5, interval: Double = 0.5, duration: Double = 5.0) {
-        ensureStarted()
+        guard ensureStarted(), let core else { return }
         core.tanTiao(string: string, fret: fret, velocity: velocity, position: position, interval: interval, duration: duration)
     }
 
@@ -149,7 +163,7 @@ final class AudioEngine: ObservableObject {
     /// moved elsewhere.
     func rollStart(kind: RollKind, string: Int, fret: Int, interval: Double,
                    velocity: Double, position: Double = 0.5) {
-        ensureStarted()
+        guard ensureStarted(), let core else { return }
         core.rollStart(kind: kind, string: string, fret: fret, interval: interval,
                        velocity: velocity, position: position)
     }

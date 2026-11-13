@@ -20,6 +20,11 @@ struct PipaView: View {
     @State private var showSettings = false
     @State private var showPositions = false
 
+    /// The photographic board and the rotatable 3D board are interchangeable.
+    /// Three-dimensional presentation is the default; the original photograph
+    /// stays in the asset catalogue and is one switch away in settings.
+    @AppStorage("use3DScene") private var use3DScene = true
+
     /// Continuous mode. With it on, 弹挑 and 轮指 keep playing until they are
     /// stopped, and a touch on the strings moves them to a new note.
     @State private var continuous = false
@@ -45,6 +50,12 @@ struct PipaView: View {
             let wide = geometry.size.width > geometry.size.height
             VStack(spacing: 0) {
                 header
+                if let error = audio.startupError {
+                    Text("音频未就绪：\(error)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red)
+                        .padding(.bottom, 6)
+                }
                 if wide {
                     // Landscape: the board keeps the full height of the device
                     // and the controls stand in a column beside it, as they
@@ -80,6 +91,7 @@ struct PipaView: View {
         .background(background.ignoresSafeArea())
         .foregroundStyle(PipaPalette.ink)
         .tint(PipaPalette.cinnabar)
+        .onAppear { audio.ensureStarted() }
         .sheet(isPresented: $showSettings) { settings }
         .sheet(isPresented: $showPositions) { positionPanel }
     }
@@ -136,11 +148,24 @@ struct PipaView: View {
                 Spacer()
             }.padding(.top, 40).padding(.leading, 4)
                 .accessibilityHidden(true)
-            PipaBoardView(selection: $selection, litCell: $litCell, vib: $vib,
-                          slash: $slash, burst: $burst) { string, fret, position in
-                play(string: string, fret: fret, position: position)
-            } onStrum: { rightward, starter in
-                strumAndAnimate(sao: rightward, start: starter)
+            Group {
+                if use3DScene {
+                    Pipa3DBoardView(selection: $selection, litCell: $litCell,
+                                    vib: $vib, slash: $slash, burst: $burst) {
+                        string, fret, position in
+                        play(string: string, fret: fret, position: position)
+                    } onStrum: { rightward, starter in
+                        strumAndAnimate(sao: rightward, start: starter)
+                    }
+                } else {
+                    PipaBoardView(selection: $selection, litCell: $litCell,
+                                  vib: $vib, slash: $slash, burst: $burst) {
+                        string, fret, position in
+                        play(string: string, fret: fret, position: position)
+                    } onStrum: { rightward, starter in
+                        strumAndAnimate(sao: rightward, start: starter)
+                    }
+                }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -292,6 +317,11 @@ struct PipaView: View {
                 Section("技法速度") {
                     labelledSlider("弹挑速度", value: $tanTiaoBPM, range: 40...480) { "\(Int($0)) BPM" }
                     labelledSlider("轮指速率", value: $wheelRate, range: 4...16) { "\(Int($0)) 次 / 秒" }
+                }
+                Section("琴面视图") {
+                    Toggle("三维琴面", isOn: $use3DScene)
+                    Text("三维琴面由解析几何生成四弦与 32 个相品，画面和触摸随视角一致变化。在琴弦区外拖动可转动视角，双指缩放。关闭后回到照片琴面。")
+                        .font(.subheadline).foregroundStyle(PipaPalette.muted)
                 }
                 Section("连续模式") {
                     Toggle("弹挑与轮指持续发声", isOn: $continuous)
