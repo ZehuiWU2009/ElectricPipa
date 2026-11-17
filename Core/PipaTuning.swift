@@ -3,15 +3,17 @@ import Foundation
 /// Musical parameters of the Pipa: tuning, positions and pitch conversion.
 ///
 /// The standard tuning runs A-d-e-a from the Chan string (thickest) to the Zi
-/// string (thinnest), which is A3 / D4 / E4 / A4 in scientific pitch notation.
-/// This is the zheng diao tuning used by most of the repertoire. A modern Pipa
-/// carries six xiang and twenty-five frets, every adjacent pair a semitone
-/// apart, laid out in twelve-tone equal temperament.
+/// string (thinnest), which is A2 / D3 / E3 / A3 in scientific pitch notation:
+/// 110.00, 146.83, 164.81 and 220.00 Hz. This is the zheng diao tuning used by
+/// most of the repertoire, and it is the register the instrument actually
+/// sounds in; the earlier table sat an octave above it. A modern Pipa carries
+/// six xiang and twenty-five frets, every adjacent pair a semitone apart, laid
+/// out in twelve-tone equal temperament.
 enum PipaTuning {
 
     /// Open-string MIDI pitches of the four strings. Index 0 is the Chan string
     /// (thickest and lowest), index 3 is the Zi string (thinnest and highest).
-    static let openStringMIDI: [Int] = [57, 62, 64, 69]
+    static let openStringMIDI: [Int] = [45, 50, 52, 57]
 
     /// Traditional names of the four strings, from thickest to thinnest.
     static let stringNames = ["缠弦", "老弦", "中弦", "子弦"]

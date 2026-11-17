@@ -5,10 +5,17 @@ import Accelerate
 ///
 /// The Pipa is a half-pear-shaped wooden box: a paulownia soundboard, a hardwood
 /// back, and a pronounced air-cavity resonance inside, with the soundboard
-/// itself carrying several modes of vibration. Five peaking filters stand in for
-/// these resonances, and together they form the tonal skeleton that says this is
-/// a Pipa and not a guitar.
+/// itself carrying several modes of vibration.
+///
+/// The shape of the response matters more than any single resonance. Measured
+/// on a real instrument, every one of the four strings peaks around its fourth
+/// to sixth harmonic and falls away steeply below that: on the Zi string the
+/// fundamental sits some 40 dB under the fourth harmonic. Five peaking filters
+/// on their own cannot express a slope that broad, so a low shelf does the
+/// overall tilt and the peaks only shape the detail on top of it.
 final class PipaBody {
+
+    private var shelf: Biquad
 
     private var filters: [Biquad] = []
 
@@ -18,12 +25,22 @@ final class PipaBody {
 
     init(sampleRate: Double, sizeScale: Double = 1.0) {
         self.sizeScale = sizeScale
+
+        // Radiation roll-off below the soundboard's first mode. Goes first in
+        // the chain because it is a property of how the box radiates, not of
+        // any one mode.
+        shelf = Biquad.lowShelf(
+            sampleRate: sampleRate,
+            frequency: 300.0 * sizeScale,
+            gainDB: -16.0
+        )
+
         let peaks: [(frequency: Double, q: Double, gainDB: Double)] = [
-            (205, 3.5, 9.0),    // Air-cavity resonance; most of the low-register weight comes from here
-            (420, 3.0, 6.0),    // First bending mode of the soundboard
-            (760, 2.6, 4.5),
-            (1350, 2.2, 3.5),
-            (2600, 1.8, 2.5),   // High-frequency brightness; sets the grain of the metal-wound strings
+            (205, 3.5, -6.0),   // Air-cavity resonance; the box gives little back this low
+            (420, 3.0, -2.0),   // First bending mode of the soundboard
+            (760, 2.6, 10.0),   // The bright, penetrating band every Pipa has
+            (1350, 2.2, 5.0),
+            (2600, 1.8, 0.0),   // High-frequency brightness; sets the grain of the metal-wound strings
         ]
         filters = peaks.map { peak in
             Biquad.peaking(
@@ -37,7 +54,7 @@ final class PipaBody {
 
     /// Per-sample processing, used for direct filtering outside commuted synthesis.
     func process(_ input: Float) -> Float {
-        var value = input
+        var value = shelf.process(input)
         for index in filters.indices {
             value = filters[index].process(value)
         }
@@ -46,6 +63,7 @@ final class PipaBody {
 
     /// Reset internal state; call before switching notes.
     func reset() {
+        shelf.reset()
         for index in filters.indices { filters[index].reset() }
     }
 
@@ -151,6 +169,35 @@ struct Biquad {
         let a0 = Float(1 + alpha / amplitude)
         let a1 = Float(-2 * cosOmega)
         let a2 = Float(1 - alpha / amplitude)
+
+        var filter = Biquad()
+        filter.b0 = b0 / a0
+        filter.b1 = b1 / a0
+        filter.b2 = b2 / a0
+        filter.a1 = a1 / a0
+        filter.a2 = a2 / a0
+        return filter
+    }
+
+    /// Low shelf, same cookbook, slope parameter S = 1.
+    ///
+    /// A peaking filter only moves the band around its centre; a shelf moves
+    /// everything below the corner. That is the difference between a resonance
+    /// and a radiation roll-off, and it is what lets the body model hold the
+    /// measured 40 dB rise from 220 Hz to 880 Hz.
+    static func lowShelf(sampleRate: Double, frequency: Double, gainDB: Double) -> Biquad {
+        let amplitude = pow(10.0, gainDB / 40.0)
+        let omega = 2.0 * Double.pi * frequency / sampleRate
+        let cosOmega = cos(omega)
+        let alpha = sin(omega) / 2.0 * (2.0 as Double).squareRoot()
+        let twoSqrtAAlpha = 2.0 * amplitude.squareRoot() * alpha
+
+        let b0 = Float(amplitude * ((amplitude + 1) - (amplitude - 1) * cosOmega + twoSqrtAAlpha))
+        let b1 = Float(2 * amplitude * ((amplitude - 1) - (amplitude + 1) * cosOmega))
+        let b2 = Float(amplitude * ((amplitude + 1) - (amplitude - 1) * cosOmega - twoSqrtAAlpha))
+        let a0 = Float((amplitude + 1) + (amplitude - 1) * cosOmega + twoSqrtAAlpha)
+        let a1 = Float(-2 * ((amplitude - 1) + (amplitude + 1) * cosOmega))
+        let a2 = Float((amplitude + 1) + (amplitude - 1) * cosOmega - twoSqrtAAlpha)
 
         var filter = Biquad()
         filter.b0 = b0 / a0

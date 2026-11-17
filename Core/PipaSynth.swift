@@ -18,6 +18,32 @@ final class PipaSynth {
     /// Master output gain.
     var masterGain: Float = 0.5
 
+    /// Per-string brightness and decay, fitted against a recorded set of four
+    /// open strings on a Jiaozhi huangtan Pipa (48 kHz, 24-bit, Zoom H6).
+    ///
+    /// Index 0 is the Chan string. Thick strings are darker and ring longer,
+    /// thin strings brighter and shorter, and the fit reproduces that gradient
+    /// from the recordings rather than from a guess: 40 s of decay on the Chan
+    /// string down to 6.4 s on the Zi string.
+    ///
+    /// Brightness sits near the top of its range on purpose. On the recorded
+    /// instrument the fundamental is 35 to 40 dB below the fourth harmonic, and
+    /// a darker setting cannot hold that much high-frequency content alive.
+    static let stringBrightness: [Double] = [0.9704, 0.9843, 0.9886, 0.9960]
+    static let stringDecayTime: [Double] = [40.00, 24.22, 12.73, 6.41]
+
+    /// Where the right hand strikes each string, as a fraction of the speaking
+    /// length. Measured off the recordings: between a fifth and a third of the
+    /// string from the bridge, not the middle. The middle of a string is where
+    /// the fourth harmonic has a node, which is why the old 0.5 setting thinned
+    /// the tone out.
+    static let stringPluckPosition: [Double] = [0.263, 0.134, 0.120, 0.315]
+
+    /// Global tone trim, 0.5 is neutral. The per-string values above are the
+    /// measured truth, so the brightness control shifts them together instead of
+    /// overwriting them.
+    private var brightnessTrim: Double = 0.5
+
     init(sampleRate: Double, bodySizeScale: Double = 1.0) {
         self.sampleRate = sampleRate
         self.body = PipaBody(sampleRate: sampleRate, sizeScale: bodySizeScale)
@@ -25,11 +51,8 @@ final class PipaSynth {
         for index in 0..<Self.stringCount {
             let frequency = PipaTuning.frequency(string: index, fret: 0)
             let string = PipaString(sampleRate: sampleRate, frequency: frequency)
-            // Thick strings are darker and longer, thin strings brighter and
-            // shorter: the real tonal gradient across the four strings.
-            let thickness = Self.stringCount > 1 ? Double(index) / Double(Self.stringCount - 1) : 0
-            string.setBrightness(0.34 + 0.42 * thickness)
-            string.setDecayTime(4.6 - 2.6 * thickness)
+            string.setBrightness(Self.stringBrightness[index])
+            string.setDecayTime(Self.stringDecayTime[index])
             strings.append(string)
         }
     }
@@ -39,8 +62,11 @@ final class PipaSynth {
     ///   - string: string index, 0 is the Chan string (thickest).
     ///   - fret: position, 0 is the open string.
     ///   - velocity: velocity, 0 to 1.
-    ///   - position: right-hand pluck position. 0.5 is the conventional spot;
-    ///     smaller is closer to the bridge and gives a harder tone.
+    ///   - position: right-hand pluck position in the conventional scale, where
+    ///     0.5 means the middle of the string. This is not a fraction of the
+    ///     speaking length: the hand does not play in the middle, so 0.5 is
+    ///     mapped onto the measured spot for that string and everything else
+    ///     scales with it. A smaller value is closer to the bridge.
     func pluck(string: Int, fret: Int, velocity: Double = 0.8, position: Double = 0.5) {
         guard strings.indices.contains(string) else { return }
         let target = strings[string]
@@ -51,12 +77,22 @@ final class PipaSynth {
 
         // Stopping the string shortens the vibrating length, so the tail
         // shortens with it.
-        let thickness = Self.stringCount > 1 ? Double(string) / Double(Self.stringCount - 1) : 0
-        let baseDecay = 4.6 - 2.6 * thickness
+        let baseDecay = Self.stringDecayTime[string]
         let fretFactor = 1.0 / (1.0 + Double(fret) * 0.035)
         target.setDecayTime(baseDecay * fretFactor)
 
-        target.pluck(amplitude: velocity, position: position)
+        target.pluck(amplitude: velocity, position: Self.measuredPosition(position, string: string))
+    }
+
+    /// Map a conventional pluck position onto the measured region for a string.
+    ///
+    /// 0.5 is the middle of the string in the old scale and maps to the fitted
+    /// spot; 0.4 or 0.6 land the same 20 percent nearer or further from the
+    /// bridge, which keeps the relative spacing of tan-tiao and the wheel
+    /// strokes intact while moving the whole hand to where it actually plays.
+    static func measuredPosition(_ conventional: Double, string: Int) -> Double {
+        let base = stringPluckPosition[min(max(string, 0), stringPluckPosition.count - 1)]
+        return min(max(base * (conventional / 0.5), 0.05), 0.95)
     }
 
     /// For verification: set one string to a position and return the fundamental
@@ -74,7 +110,8 @@ final class PipaSynth {
     func pluckFrequency(string: Int, frequency: Double, velocity: Double = 0.8, position: Double = 0.5) {
         guard strings.indices.contains(string) else { return }
         strings[string].frequency = frequency
-        strings[string].pluck(amplitude: velocity, position: position)
+        strings[string].pluck(amplitude: velocity,
+                              position: Self.measuredPosition(position, string: string))
     }
 
     /// Push or pull the string, gliding its pitch continuously to the target
@@ -95,9 +132,21 @@ final class PipaSynth {
         for index in strings.indices { strings[index].damp() }
     }
 
-    /// Set the brightness of all four strings at once, 0 dark to 1 bright.
+    /// Shift the tone of all four strings together, 0.5 being the measured
+    /// setting. The per-string values stay the baseline: a global control that
+    /// overwrote them would throw away the fit, which is why this is a trim and
+    /// not an assignment.
     func setBrightness(_ value: Double) {
-        for index in strings.indices { strings[index].setBrightness(value) }
+        brightnessTrim = min(max(value, 0.0), 1.0)
+        applyBrightness()
+    }
+
+    private func applyBrightness() {
+        let offset = (brightnessTrim - 0.5) * 0.6
+        for index in strings.indices {
+            let base = Self.stringBrightness[index]
+            strings[index].setBrightness(min(max(base + offset, 0.02), 1.0))
+        }
     }
 
     /// Strum, sounding the four strings in quick succession.
@@ -180,10 +229,11 @@ enum WheelFinger: CaseIterable {
         }
     }
 
-    /// Where this finger strikes, as a fraction of the speaking length:
-    /// 0.5 is the conventional spot, smaller is closer to the bridge and
-    /// harder. The four throwing fingers creep toward the bridge as they
-    /// weaken; the thumb sits on the other side of the conventional spot.
+    /// Where this finger strikes, in the conventional scale where 0.5 is the
+    /// middle of the string: smaller is closer to the bridge and harder. The
+    /// four throwing fingers creep toward the bridge as they weaken; the thumb
+    /// sits on the other side of the group. PipaSynth maps the whole set onto
+    /// the measured pluck region when the stroke is played.
     var position: Double {
         switch self {
         case .index: return 0.50

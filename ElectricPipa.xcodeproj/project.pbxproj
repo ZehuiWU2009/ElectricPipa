@@ -21,6 +21,8 @@
 		F4A9B4AC6B4645308CF32008 /* PipaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520D5ED709B5433F90CA53F1 /* PipaBody.swift */; };
 		B3D0000100000000000000A2 /* Pipa3DGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000100000000000000A1 /* Pipa3DGeometry.swift */; };
 		B3D0000100000000000000A4 /* Pipa3DBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000100000000000000A3 /* Pipa3DBoardView.swift */; };
+		B3D0000200000000000000B2 /* Pipa3DBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000200000000000000B1 /* Pipa3DBrowseView.swift */; };
+		B3D0000200000000000000B4 /* PipaPartAnnotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000200000000000000B3 /* PipaPartAnnotations.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +42,8 @@
 		F6D4FE87D8CD4C6C9921ACD8 /* PipaTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaTuning.swift; sourceTree = "<group>"; };
 		B3D0000100000000000000A1 /* Pipa3DGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pipa3DGeometry.swift; sourceTree = "<group>"; };
 		B3D0000100000000000000A3 /* Pipa3DBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pipa3DBoardView.swift; sourceTree = "<group>"; };
+		B3D0000200000000000000B1 /* Pipa3DBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pipa3DBrowseView.swift; sourceTree = "<group>"; };
+		B3D0000200000000000000B3 /* PipaPartAnnotations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaPartAnnotations.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +67,8 @@
 				6635CEBCB09542E49F0226BA /* PipaGeometry.swift */,
 				B3D0000100000000000000A1 /* Pipa3DGeometry.swift */,
 				B3D0000100000000000000A3 /* Pipa3DBoardView.swift */,
+				B3D0000200000000000000B1 /* Pipa3DBrowseView.swift */,
+				B3D0000200000000000000B3 /* PipaPartAnnotations.swift */,
 				DB164EA7642945D693A8CDC4 /* Info.plist */,
 			);
 			path = App;
@@ -195,6 +201,8 @@
 				0CD3CFEA6EC04042BBC70A29 /* PipaGeometry.swift in Sources */,
 				B3D0000100000000000000A2 /* Pipa3DGeometry.swift in Sources */,
 				B3D0000100000000000000A4 /* Pipa3DBoardView.swift in Sources */,
+				B3D0000200000000000000B2 /* Pipa3DBrowseView.swift in Sources */,
+				B3D0000200000000000000B4 /* PipaPartAnnotations.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

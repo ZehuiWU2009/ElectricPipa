@@ -43,6 +43,18 @@ enum PipaGeometry {
         let bridgeX = CGFloat(209 + string * 30)
         return point(x: nutX + (bridgeX - nutX) * t, y: 0, in: rect).x
     }
+    /// Strip between the last fret and the bridge, where an open string is
+    /// sounded. Mirrors Pipa3DGeometry.tailZoneTop.
+    static func tailZone(in rect: CGRect) -> CGRect {
+        let top = point(x: 0, y: 1246, in: rect).y
+        let bottom = bridgeY(in: rect) - 8
+        let midY = (top + bottom) / 2
+        let left = stringX(0, atY: midY, in: rect) - 12
+        let right = stringX(3, atY: midY, in: rect) + 12
+        return CGRect(x: left, y: top, width: max(0, right - left),
+                      height: max(0, bottom - top))
+    }
+
     static func nearest(location: CGPoint, in rect: CGRect) -> (string: Int, fret: Int)? {
         guard rect.width > 0, rect.height > 0,
               location.y >= nutY(in: rect) - 8,
@@ -57,6 +69,11 @@ enum PipaGeometry {
         return (string, fret)
     }
     static func pluckPosition(_ location: CGPoint, in rect: CGRect) -> Double {
+        // The open-string strip and the head both use the neutral 0.5, which
+        // maps onto the measured pluck spot; interpolating there would sound
+        // softer than the string was fitted to sound.
+        if location.y >= point(x: 0, y: 1246, in: rect).y { return 0.5 }
+        if location.y < nutY(in: rect) { return 0.5 }
         let fraction = (location.y - nutY(in: rect)) / (bridgeY(in: rect) - nutY(in: rect))
         return Double(min(max(fraction, 0.15), 0.95))
     }

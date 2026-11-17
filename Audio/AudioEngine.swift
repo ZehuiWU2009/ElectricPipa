@@ -31,7 +31,10 @@ final class AudioEngine: ObservableObject {
     @Published var masterGain: Float = 0.5 {
         didSet { core?.setMasterGain(masterGain) }
     }
-    @Published var brightness: Double = 0.6 {
+    /// Tone trim, 0.5 means "as measured on the real instrument". 0.6 used to
+    /// be the default when brightness was an absolute per-string setting; with
+    /// the fitted values now baked into the strings, neutral is the middle.
+    @Published var brightness: Double = 0.5 {
         didSet { core?.setBrightness(brightness) }
     }
 

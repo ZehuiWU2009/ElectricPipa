@@ -192,8 +192,26 @@ enum Pipa3DGeometry {
                 local(xPixel: right, yPixel: y, z: fretHeight))
     }
 
+    /// Rectangle covering the strip between the last fret and the bridge, the
+    /// place an open string is sounded.
+    static func tailQuad() -> [Pipa3DPoint] {
+        let top = tailZoneTop
+        let bottom = bridgePixel - 18
+        let left = stringPixelX(0, atY: (top + bottom) / 2) - 20
+        let right = stringPixelX(3, atY: (top + bottom) / 2) + 20
+        return [local(xPixel: left, yPixel: top, z: fretHeight),
+                local(xPixel: right, yPixel: top, z: fretHeight),
+                local(xPixel: right, yPixel: bottom, z: fretHeight),
+                local(xPixel: left, yPixel: bottom, z: fretHeight)]
+    }
+
+    /// The strip between the last fret and the bridge. This is the only place a
+    /// real right hand strikes, and it is the only physically honest home for
+    /// the open string: above the nut there is no speaking length at all.
+    static let tailZoneTop: Double = 1246
+
     /// Hit test in instrument space, independent of any camera transform.
-    /// Rules mirror PipaGeometry.nearest, including the open-string zone.
+    /// Rules mirror PipaGeometry.nearest, including the open-string strip.
     static func hitInInstrumentSpace(x: Double, y: Double) -> (string: Int, fret: Int)? {
         guard y >= nutPixel - 8, y <= bridgePixel + 8 else { return nil }
         let xs = (0..<stringCount).map { stringPixelX($0, atY: y) }
@@ -220,9 +238,16 @@ enum Pipa3DGeometry {
     }
 
     /// Continuous pluck position along the string, clamped as in the 2D board.
+    ///
+    /// Inside the open-string strip the answer is the neutral 0.5, which
+    /// PipaSynth maps onto the measured spot for that string. The hand is
+    /// already where the fit was taken, and interpolating along y there would
+    /// slide the stroke to 0.9 of the string, close to the node pattern of the
+    /// middle and audibly softer than the string was measured to sound.
     static func pluckPosition(screen: CGPoint, camera: Pipa3DCamera) -> Double {
         guard let l = camera.unproject(screen, planeZ: stringHeight) else { return 0.5 }
         let (_, y) = pixel(l)
+        if y >= tailZoneTop || y < nutPixel { return 0.5 }
         let fraction = (y - nutPixel) / (bridgePixel - nutPixel)
         return min(max(fraction, 0.15), 0.95)
     }

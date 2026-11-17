@@ -1,4 +1,350 @@
 {
   "note": "Integer PCM only. null dB means silence. Full-scale samples flag possible clipping; no automatic quality verdict.",
-  "files": []
+  "files": [
+    {
+      "file": "Recordings/pilot/raw/take1/pipa01_room.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 15.0,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -56.07,
+          "rms_dbfs": -71.19,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -56.98,
+          "rms_dbfs": -72.84,
+          "dc_mean": -3e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take1/pipa01_s1_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 38.31,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -7.18,
+          "rms_dbfs": -39.74,
+          "dc_mean": -3.2e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -10.2,
+          "rms_dbfs": -42.82,
+          "dc_mean": -3.2e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take1/pipa01_s2_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 47.57,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -10.27,
+          "rms_dbfs": -42.12,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -11.04,
+          "rms_dbfs": -43.56,
+          "dc_mean": -3e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take1/pipa01_s3_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 50.01,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -8.23,
+          "rms_dbfs": -40.6,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -10.09,
+          "rms_dbfs": -43.68,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take1/pipa01_s4_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 50.025,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -5.48,
+          "rms_dbfs": -41.04,
+          "dc_mean": -3e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -8.32,
+          "rms_dbfs": -43.25,
+          "dc_mean": -2.9e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take2/pipa01_room.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 15.0,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -57.01,
+          "rms_dbfs": -72.26,
+          "dc_mean": -3.5e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -57.91,
+          "rms_dbfs": -72.85,
+          "dc_mean": -3.3e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take2/pipa01_s1_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 44.84,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -9.64,
+          "rms_dbfs": -41.37,
+          "dc_mean": -3e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -11.01,
+          "rms_dbfs": -43.79,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take2/pipa01_s2_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 46.48,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -8.21,
+          "rms_dbfs": -40.46,
+          "dc_mean": -3.2e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -9.16,
+          "rms_dbfs": -41.5,
+          "dc_mean": -3.2e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take2/pipa01_s3_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 46.44,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -9.66,
+          "rms_dbfs": -40.63,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -11.11,
+          "rms_dbfs": -43.15,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take2/pipa01_s4_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 52.95,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -9.71,
+          "rms_dbfs": -43.12,
+          "dc_mean": -3e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -11.76,
+          "rms_dbfs": -44.65,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take3/pipa01_room.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 15.0,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -49.6,
+          "rms_dbfs": -73.89,
+          "dc_mean": -2.8e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -51.4,
+          "rms_dbfs": -74.85,
+          "dc_mean": -2.6e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take3/pipa01_s1_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 49.13,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -6.19,
+          "rms_dbfs": -38.13,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -4.34,
+          "rms_dbfs": -38.25,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take3/pipa01_s2_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 41.35,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -3.83,
+          "rms_dbfs": -35.64,
+          "dc_mean": -3.2e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -5.81,
+          "rms_dbfs": -36.09,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take3/pipa01_s3_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 44.78,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -2.32,
+          "rms_dbfs": -34.47,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -3.13,
+          "rms_dbfs": -35.72,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    },
+    {
+      "file": "Recordings/pilot/raw/take3/pipa01_s4_open_tan_medium.wav",
+      "sample_rate": 48000,
+      "bits": 24,
+      "duration_seconds": 49.504,
+      "channels": 2,
+      "levels": [
+        {
+          "channel": 1,
+          "peak_dbfs": -7.49,
+          "rms_dbfs": -41.48,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        },
+        {
+          "channel": 2,
+          "peak_dbfs": -8.22,
+          "rms_dbfs": -41.48,
+          "dc_mean": -3.1e-06,
+          "full_scale_samples": 0
+        }
+      ]
+    }
+  ]
 }

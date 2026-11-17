@@ -20,10 +20,13 @@ struct PipaView: View {
     @State private var showSettings = false
     @State private var showPositions = false
 
-    /// The photographic board and the rotatable 3D board are interchangeable.
-    /// Three-dimensional presentation is the default; the original photograph
-    /// stays in the asset catalogue and is one switch away in settings.
-    @AppStorage("use3DScene") private var use3DScene = true
+    /// Two stages. The app opens on the 3D browse page, where the instrument
+    /// is looked at and its parts are introduced but no sound is made. The
+    /// player then steps into the 2D board, which owns every pluck and strum.
+    /// Separating them is what stops a sideways sweep from being read as a
+    /// camera rotation.
+    private enum Stage { case browse, play }
+    @State private var stage: Stage = .browse
 
     /// Continuous mode. With it on, 弹挑 and 轮指 keep playing until they are
     /// stopped, and a touch on the strings moves them to a new note.
@@ -46,6 +49,23 @@ struct PipaView: View {
     private static let rollVibDuration = 6.0
 
     var body: some View {
+        Group {
+            if stage == .browse {
+                Pipa3DBrowseView { stage = .play }
+            } else {
+                player
+            }
+        }
+        .background(background.ignoresSafeArea())
+        .foregroundStyle(PipaPalette.ink)
+        .tint(PipaPalette.cinnabar)
+        .onAppear { audio.ensureStarted() }
+        .sheet(isPresented: $showSettings) { settings }
+        .sheet(isPresented: $showPositions) { positionPanel }
+    }
+
+    /// The 2D playing stage. Every sound the app makes comes from here.
+    private var player: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width > geometry.size.height
             VStack(spacing: 0) {
@@ -88,12 +108,6 @@ struct PipaView: View {
             .onChange(of: tanTiaoBPM) { _, _ in retempo() }
             .onChange(of: continuous) { _, on in if !on { stopRoll() } }
         }
-        .background(background.ignoresSafeArea())
-        .foregroundStyle(PipaPalette.ink)
-        .tint(PipaPalette.cinnabar)
-        .onAppear { audio.ensureStarted() }
-        .sheet(isPresented: $showSettings) { settings }
-        .sheet(isPresented: $showPositions) { positionPanel }
     }
 
     private var background: some View {
@@ -129,6 +143,15 @@ struct PipaView: View {
                     .foregroundStyle(PipaPalette.muted)
             }
             Spacer(minLength: 4)
+            // A direct way back to the browse page. The same switch also lives
+            // in settings, but leaving the playing stage should not require
+            // opening a menu first.
+            Button { stage = .browse } label: {
+                Image(systemName: "rotate.3d")
+                    .font(.system(size: 18, weight: .regular))
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.55), in: Circle())
+            }.accessibilityLabel("回到三维观琴")
             Button { showSettings = true } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 19, weight: .regular))
@@ -148,24 +171,14 @@ struct PipaView: View {
                 Spacer()
             }.padding(.top, 40).padding(.leading, 4)
                 .accessibilityHidden(true)
-            Group {
-                if use3DScene {
-                    Pipa3DBoardView(selection: $selection, litCell: $litCell,
-                                    vib: $vib, slash: $slash, burst: $burst) {
-                        string, fret, position in
-                        play(string: string, fret: fret, position: position)
-                    } onStrum: { rightward, starter in
-                        strumAndAnimate(sao: rightward, start: starter)
-                    }
-                } else {
-                    PipaBoardView(selection: $selection, litCell: $litCell,
-                                  vib: $vib, slash: $slash, burst: $burst) {
-                        string, fret, position in
-                        play(string: string, fret: fret, position: position)
-                    } onStrum: { rightward, starter in
-                        strumAndAnimate(sao: rightward, start: starter)
-                    }
-                }
+            // The playing board is always the 2D photograph. The 3D surface
+            // lives on its own browse page and never reaches the audio path.
+            PipaBoardView(selection: $selection, litCell: $litCell,
+                          vib: $vib, slash: $slash, burst: $burst) {
+                string, fret, position in
+                play(string: string, fret: fret, position: position)
+            } onStrum: { rightward, starter in
+                strumAndAnimate(sao: rightward, start: starter)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -196,7 +209,9 @@ struct PipaView: View {
             return "\(name)连续 · 点按琴弦换弦换品 · 止音停止"
         }
         if continuous { return "连续模式 · 弹挑与轮指将持续发声" }
-        return audio.isRunning ? "轻点琴弦 · 横划扫拂" : "轻触琴弦，开始演奏"
+        return audio.isRunning
+            ? "点相品弹按音 · 横划琴弦可扫拂"
+            : "轻触琴弦，开始演奏"
     }
 
     /// The rail beside the board in portrait: the five techniques as square
@@ -319,8 +334,10 @@ struct PipaView: View {
                     labelledSlider("轮指速率", value: $wheelRate, range: 4...16) { "\(Int($0)) 次 / 秒" }
                 }
                 Section("琴面视图") {
-                    Toggle("三维琴面", isOn: $use3DScene)
-                    Text("三维琴面由解析几何生成四弦与 32 个相品，画面和触摸随视角一致变化。在琴弦区外拖动可转动视角，双指缩放。关闭后回到照片琴面。")
+                    Button { showSettings = false; stage = .browse } label: {
+                        Label("回到三维观琴", systemImage: "rotate.3d")
+                    }
+                    Text("启动页的三维琴面用来欣赏与认识各部位，不发声。演奏一律在二维琴面进行，横划扫弦不会再被当成转动视角。")
                         .font(.subheadline).foregroundStyle(PipaPalette.muted)
                 }
                 Section("连续模式") {
@@ -329,7 +346,7 @@ struct PipaView: View {
                         .font(.subheadline).foregroundStyle(PipaPalette.muted)
                 }
                 Section {
-                    Text("轻点相品选择音高，轻点下方弦段弹奏空弦。横划琴弦可扫拂；高把位可在音位面板中准确演奏。")
+                    Text("点相品弹按音，点末品下方弹空弦。横划琴弦可扫拂；高把位可在音位面板中准确演奏。")
                         .font(.subheadline).foregroundStyle(PipaPalette.muted)
                 }
             }

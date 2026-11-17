@@ -87,6 +87,10 @@ struct PipaBoardView: View {
                     .shadow(color: PipaPalette.ink.opacity(0.12), radius: 12, x: 3, y: 8)
                 TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
                     Canvas { canvas, _ in
+                        // The open-string strip stays playable but carries no
+                        // on-screen label: it is simply where the right hand
+                        // sits below the last fret. Hit testing in
+                        // PipaGeometry.nearest is unchanged.
                         for string in 0..<4 {
                             let state = vib[string]
                             let elapsed = state.start.map { context.date.timeIntervalSince($0) } ?? 100

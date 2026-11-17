@@ -71,6 +71,7 @@ struct Pipa3DBoardView: View {
                 // redrawing 32 textured bands thirty times a second.
                 Canvas { canvas, _ in
                     drawBody(&canvas, camera: camera)
+                    drawOpenZones(&canvas, camera: camera)
                     drawFrets(&canvas, camera: camera)
                     drawLitCell(&canvas, camera: camera)
                 }
@@ -104,7 +105,7 @@ struct Pipa3DBoardView: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("三维琵琶演奏区")
-            .accessibilityHint("轻点琴弦演奏，横划扫拂。在琴弦区外拖动可转动视角，双指缩放。")
+            .accessibilityHint("轻点琴弦演奏。琴身下部的空弦区弹空弦，相品弹按音。横划扫拂，琴弦区外拖动可转动视角，双指缩放。")
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { onPluck(selection.string, selection.fret, 0.5) }
         }
@@ -321,8 +322,41 @@ struct Pipa3DBoardView: View {
         }
     }
 
-    private func drawFrets(_ ctx: inout GraphicsContext, camera: Pipa3DCamera) {
-        // The photograph already shows the fret bars. These hairlines are
+    /// Mark the strip that sounds an open string.
+    ///
+    /// Without a cue the open string had no visible home. It lives between the
+    /// last fret and the bridge, which is exactly where a real right hand
+    /// strikes, but nothing on the photograph says so, and the neighbouring
+    /// frets are close enough that a thumb aiming low still lands on one. The
+    /// label turns that strip into an obvious target.
+    private func drawOpenZones(_ ctx: inout GraphicsContext, camera: Pipa3DCamera) {
+        let points = Pipa3DGeometry.tailQuad().map { camera.project($0) }
+        guard points.count == 4 else { return }
+        var path = Path()
+        path.move(to: points[0])
+        for p in points.dropFirst() { path.addLine(to: p) }
+        path.closeSubpath()
+        ctx.fill(path, with: .color(PipaPalette.cinnabar.opacity(0.09)))
+        ctx.stroke(path, with: .color(PipaPalette.cinnabar.opacity(0.45)),
+                   lineWidth: CGFloat(zoom))
+
+        let centre = CGPoint(x: points.map(\.x).reduce(0, +) / 4,
+                             y: points.map(\.y).reduce(0, +) / 4)
+        let titleSize = max(10.0, 9.0 * zoom)
+        let hintSize = max(7.5, 7.0 * zoom)
+        ctx.draw(
+            Text("空弦")
+                .font(.system(size: titleSize, weight: .semibold))
+                .foregroundStyle(PipaPalette.cinnabar.opacity(0.9)),
+            at: CGPoint(x: centre.x, y: centre.y - titleSize * 0.7))
+        ctx.draw(
+            Text("点此弹奏")
+                .font(.system(size: hintSize))
+                .foregroundStyle(PipaPalette.cinnabar.opacity(0.65)),
+            at: CGPoint(x: centre.x, y: centre.y + hintSize * 1.1))
+    }
+
+    private func drawFrets(_ ctx: inout GraphicsContext, camera: Pipa3DCamera) {        // The photograph already shows the fret bars. These hairlines are
         // annotation only: they mark which of the 32 stops is playable and
         // stay faint so the wood grain remains visible underneath.
         for fret in 0..<Pipa3DGeometry.positionCount {
