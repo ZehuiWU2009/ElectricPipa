@@ -326,6 +326,17 @@ struct PipaView: View {
         NavigationStack {
             Form {
                 Section("声音") {
+                    Picker("合成模型", selection: $audio.soundModel) {
+                        ForEach(PipaSoundModel.allCases) { model in
+                            Text(model.title).tag(model)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(audio.soundModel.detail)
+                        .font(.subheadline).foregroundStyle(PipaPalette.muted)
+                    if let note = audio.modelNote {
+                        Text(note).font(.caption).foregroundStyle(.orange)
+                    }
                     labelledSlider("音色明暗", value: $audio.brightness, range: 0.15...1) { "\(Int($0 * 100))%" }
                     labelledSlider("音量", value: $audio.masterGain, range: 0...1) { "\(Int($0 * 100))%" }
                 }

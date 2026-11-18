@@ -1,4 +1,4 @@
-> Interface update (2026-11-16): the app opens on a rotatable 3D page for looking at the instrument, then leads into a 2D board for playing. Plucking and strumming happen only in 2D, so a sideways strum is never read as a camera rotation. See v2.2 and v2.3 below; older descriptions document previous versions.
+> Interface update (2026-11-16): the app opens on a rotatable 3D page for looking at the instrument, then leads into a 2D board for playing. Plucking and strumming happen only in 2D, so a sideways strum is never read as a camera rotation. See v2.2 through v2.6 below; older descriptions document previous versions.
 
 # Electric Pipa · 电子琵琶
 
@@ -9,7 +9,7 @@
 
 # Electric Pipa
 
-A physical-modelling synthesiser for the Pipa that runs on iPhone and iPad. Every sound is computed in real time on the device with digital waveguide algorithms. Nothing is played back from samples: the instrument is rebuilt in code, string by string, body and all. The core starts from the 1983 Karplus-Strong algorithm in its modern extended form, and the direction of travel is the 2020s differentiable physical modelling paradigm: the same equations, fitted against recordings of a real instrument by gradient descent.
+A physical-modelling synthesiser for the Pipa that runs on iPhone and iPad. Every sound is computed on the device, in real time, from a model of the string rather than streamed from a sample library. Two models ship. The first is a Karplus-Strong digital waveguide that synthesises each note from its equations, and it still covers all 32 positions of all four strings. The second, the default since v2.7, is a modal model measured from my own instrument: 44 to 90 partials per string, each with its own attack and decay, fitted from recordings and checked sample by sample against the take that was accepted by ear. The direction of travel is the 2020s differentiable physical modelling paradigm: the same equations, fitted against the recordings by gradient descent.
 
 > Personal project · grown out of my own Pipa practice, still evolving
 >
@@ -17,6 +17,8 @@ A physical-modelling synthesiser for the Pipa that runs on iPhone and iPad. Ever
 > School: Wuhan Cogdel Cranleigh High School (武汉康礼高级中学)
 
 I have played the Pipa since childhood. Most software instruments cover the Western orchestra, and the Pipa rarely gets a physically modelled implementation, so I set out to build one myself and to understand the acoustics of my own instrument along the way. This repository is that exploration.
+
+An earlier project of mine, PluckBuddy, helps a learner practise the Pipa, but it has a catch: you need a real instrument in hand. When I tried to share it with people around me, I found that most had never heard of the Pipa, and with no instrument at home they could not use the app at all. The barrier was owning the instrument itself. So I decided to build the instrument in software — one that anyone can open on a phone and hear, see, and play without a Pipa of their own.
 
 ## Technical Contributions of This Project
 
@@ -82,6 +84,13 @@ The four strings are separate digital waveguides. They are mixed and then fed th
 - The offline renderer (`Renderer/main.swift`) verifies tuning across the whole range: open strings within ±0.2 cents, all 128 positions within 0.00 cents by the analytic method, and the high register within ±0.5 cents under autocorrelation. All far inside the roughly ±5 cents a human ear can resolve.
 - `PipaAudio/` carries seven 24-bit WAV pieces written by the renderer: open strings, a pentatonic scale, tremolo, strum, a push-pull slide, a short phrase, and the synthesised body impulse response.
 
+### Contribution 6 · A second voice: the instrument as it was measured
+
+- The four open strings also ship as a modal model measured from the takes: 44 to 90 partials per string, each with a fast and a slow decay, near-neighbour split pairs for the beating, a stereo gain and phase per partial, and a 1.5 s residual layer for the noise the partials cannot carry. Every number comes from fitting my own recordings; nothing in it is hand-tuned.
+- The model is checked against the take it was fitted to, sample by sample: 576,000 frames per string, maximum error 6e-10, which is the rounding of the 24-bit file itself. What it plays is therefore the sound that was accepted by ear, not an approximation of it.
+- A fitted open string only covers one pitch, so the rest of the range is reached by scaling the whole partial stack, and the pluck point weighs each partial by the node the pick leaves under it. At the measured pluck spot both steps are exactly the identity, so the neutral note is the accepted one; away from it the tone moves the way a string does.
+- The waveguide stays in the app as the second model, switchable in the playing settings, so the same phrase can be compared by ear. The event queue, the roll clock and the render block are shared, so the choice is made once at start-up and nothing in the audio path branches per sample.
+
 ## Field Context · From 1983 to Differentiable Physical Modelling
 
 **The 1983 algorithm is the starting point, not the ceiling.** A textbook Karplus-Strong loop is one line of code. Everything layered on top of it in this project, the frequency-scaled loop low-pass, the all-pass fractional delay, the body filter bank and commuted synthesis, comes from extensions published in the decades after 1983, and together they form the standard modern shape of the algorithm. What is genuinely new in the 2020s is not the equations but the way the parameters are obtained.
@@ -110,6 +119,7 @@ flowchart TB
     end
     subgraph AUDIO ["Audio render thread"]
         Q["SPSC event queue<br/>lock-free, sample-accurate"]
+        M["PipaKitSynth<br/>measured modal model (default)"]
         S1["PipaString × 4<br/>digital waveguide"]
         B["PipaBody<br/>five peaking resonances"]
         G["master gain"]
@@ -117,10 +127,12 @@ flowchart TB
     U1 --> U2
     U2 --> U3
     U3 -->|"intent only"| Q
+    Q --> M
     Q --> S1
+    M --> G
     S1 --> B
     B --> G
-    G --> OUT["AVAudioSourceNode → output node"]
+    G --> OUT["AVAudioSourceNode → output node, stereo"]
 ```
 
 | Stage | Responsibility | Key file |
@@ -128,6 +140,8 @@ flowchart TB
 | Interaction | Two stages: a rotatable 3D page for looking at the instrument's parts, then a 2D photo board for playing. Only the 2D board handles plucks and strums, so a sideways strum is never read as a camera rotation | `App/Pipa3DBrowseView.swift`, `App/PipaPartAnnotations.swift`, `App/Pipa3DGeometry.swift`, `App/FretboardView.swift` (`PipaBoardView`), `App/PipaView.swift` |
 | Graph wiring | Audio session, source node format, render block factory | `Audio/AudioEngine.swift` |
 | Event queue | Lock-free SPSC ring buffer, sample-accurate scheduling | `Audio/AudioEngine.swift` (`PipaAudioCore`) |
+| Sound model | Both models implement one interface, chosen when the engine is built | `Core/PipaSoundEngine.swift` |
+| Measured string model | Partials, split pairs and residual of the four open strings, fitted from the takes; which note is played comes from scaling the partial stack | `Core/PipaKitModel.swift`, `Core/PipaKitVoice.swift`, `Core/PipaKitSynth.swift`, `Core/KitResources/` |
 | String model | Digital waveguide, loop low-pass, all-pass fractional delay | `Core/PipaString.swift` |
 | Body | Five peaking resonances, commuted synthesis | `Core/PipaBody.swift` |
 | Four-string engine | Per-string timbre gradient, technique scheduling | `Core/PipaSynth.swift` |
@@ -162,6 +176,11 @@ ElectricPipa/
 │   ├── PipaString.swift      # Single-string digital waveguide, with the three fixes
 │   ├── PipaBody.swift        # Body resonances, commuted synthesis, Biquad
 │   ├── PipaSynth.swift       # Four-string engine, strum and tremolo scheduling
+│   ├── PipaSoundEngine.swift # The interface both sound models implement
+│   ├── PipaKitModel.swift    # Modal model measured from the takes: decoding and validation
+│   ├── PipaKitVoice.swift    # One note: partials, split pairs, residual, pluck weighting, damping
+│   ├── PipaKitSynth.swift    # Four measured voices, bridge coupling, stereo mix
+│   ├── KitResources/         # model.json and the four residual layers (ElectricPipaKit 1.0.0)
 │   └── WavFile.swift         # 24-bit WAV reading and writing
 ├── Audio/
 │   └── AudioEngine.swift     # AVAudioEngine real-time rendering, lock-free event queue
@@ -179,6 +198,8 @@ ElectricPipa/
 │   ├── verify-ui-geometry.swift
 │   ├── verify-3d-geometry.swift
 │   ├── verify-3d-app-geometry.swift
+│   ├── verify-kit-model.swift # Port fidelity, pitch, pluck position, cost, core rendering, listening files
+│   ├── kit-fixtures/         # Golden samples and reported peaks from ElectricPipaKit 1.0.0
 │   ├── export_fret_anchors.py
 │   ├── inspect-recordings.py
 │   ├── prepare_back_asset.py
@@ -293,10 +314,43 @@ Each round below was driven by something the previous round could not do. The fi
 - Rewrote the part semantics for the three faces: seven parts on the front, three on the back, one on the side, each with a bilingual note on the craft and the culture behind it, from the ruyi head and the phoenix platform to Zhu Zaiyu's twelve-tone equal temperament and the Pipa Xing. Static dots became breathing points of light; a tap reveals the part name, a second tap opens the note
 - Recalibrated the hotspots against the photos: the front peg anchor had been sitting in empty space and the xiang anchor fell between two strips. A return button on the playing board goes back to the viewing page
 
+### v2.4 · Letting the recordings set the pluck and the ringing (2026-11-17)
+
+- The comb notch left by the plectrum was pinned to an integer delay and a fixed depth. Both are now continuous: the notch lands at the measured point between samples, and each string carries its own depth. A hard pick digs a deep notch, a thick wound string smears it; the fit decides which is which. Against the Swift kernel itself the weighted harmonic error dropped from 286 to 229, with the Zhong string's ninth harmonic moving from +22 dB to +1.8 dB of the recording
+- Plucking one string now drives the other three through the shared bridge. Six couplings, one per pair, came from narrow peaks at the other strings' fundamentals in the same takes: a 110 Hz peak during a 220 Hz pluck can only be the Chan string answering. The direct voice and the ringing voices are rendered separately through the same body filter, which is exact because the filter is linear
+- The new voices are quiet and slow to build, so they do not disturb the fitted attack. Rendering all four strings through the real Swift kernel, adding them cut the cross-string peak error from 66 dB to 6 dB while leaving the direct-string harmonic error unchanged. The fit and the app now run the same numbers
+
+### v2.5 · Steel where the recording has steel (2026-11-17)
+
+- The brightness fit left the Zi string's loop filter too dark, rolling off the 8-12 kHz partials that give a steel Pipa its edge. On the recording those partials sit 22.8 dB above the model; on the old synth they sat 20.6 dB below it. The Zi string now pins its loop coefficient directly instead of deriving it from brightness, leaving the other three on the fitted route. Its high band moved to within 4.7 dB of the recording while every other string stayed byte-for-byte the same
+
+### v2.6 · The shape of the first 30 milliseconds (2026-11-17)
+
+- The old attack was a monotonic cosine ramp a few milliseconds long. It could not produce the overshoot a real pluck has, and it was too short to hear. Comparing Hilbert envelopes across the takes showed the recorded attack rises over 8-12 ms to about 1.4 times its steady level, then settles back by 20-30 ms
+- The onset is now a transient gain measured from the recording rather than a guessed ramp. It rises past unity and falls back, following the fitted curve at 1 ms resolution. Past 30 ms it is exactly one, so the steady spectrum is untouched: comparing the real Swift kernel with and without it, every harmonic from 100-300 ms is identical. The attack envelope error against the recording dropped by about a third
+- The gain is applied per string inside the synthesiser before the body filter, so the fitted spectral shape and the sympathetic voices are left alone
+
+### v2.7 · The instrument as it was measured (2026-11-18)
+
+- The four open strings now sound from a modal model fitted to the takes instead of the waveguide: 44 to 90 partials per string, each with a fast and a slow decay, split pairs for the beating, a stereo gain and phase per partial, and a 1.5 s residual layer. Against the accepted 24-bit audio of the same take the worst sample differs by 6e-10, which is that file's own rounding
+- The fit measured the open strings at 110.585, 147.19, 165.255 and 221.44 Hz, four to eleven cents above A-d-e-a. Each string is pulled onto the equal-tempered table so the note readout, the tuner and the ear agree; the partial stack is scaled from there for every stop position, and the pluck point weighs each partial by the node under the pick, which is the identity at the spot the fit was measured at
+- Brightness became a spectral tilt and 止音 a fast fade, while the event queue, the roll clock, the sympathetic couplings and the render block are unchanged. The waveguide is still in the app and switchable in the playing settings, so both models can be heard on the same phrase
+- Verification in `Scripts/verify-kit-model.swift`: 17 golden samples per string within 1.2e-9, open strings and sampled frets within 3 cents by autocorrelation, a running roll silent 100 ms after 止音, four voices at 20 times real time, about 5% of one core on an M-series Mac, and a 44.1 kHz device keeping pitch and level (0.1%) once the residual is resampled
+- Fixed on the way: the touch position was mirrored. The audio side measures the pluck point from the bridge, the board measured it from the nut, so tapping by the bridge used to sound like tapping by the xiang
+
+### v2.8 · Why the instrument went quiet after a few plucks (2026-11-18)
+
+- A bug that only showed on a real device: after three or four plucks the strings stopped sounding, and 止音 brought them back for another few. The cause was the render callback overrunning its deadline, not the audio session. CoreAudio said so directly with `IOWorkLoop: skipping cycle due to overload`, and it was right: the Debug configuration compiled the synthesis loop unoptimised, where one ringing string alone needs more than the time a buffer allows, and every string struck added its own 44 to 90 partials to that load for good
+- Two changes. The Debug configuration now optimises Swift like Release does, which is the difference between 384% and 5% of one core for four strings; and a voice releases itself once its partials and residual have faded below -120 dBFS, so a string that has gone quiet stops costing the render thread anything until it is struck again
+- The sound is unchanged: the same 39 checks still pass, golden samples still within 1.2e-9, and the release only fires at a level below the speaker's own noise floor
+- The console probes are quiet again. What is left prints only when the render thread produces no samples while a voice is sounding, which is the one condition that used to be invisible
+
 ## Known Limitations / To Be Improved
 
-- The body filter bank and the per-string loop parameters are now fitted from recordings of my own instrument, but only for the four open strings at one dynamic level. Attack transients, the high frets and sympathetic resonance still use the general model rather than measured data
-- The fitted instrument still lacks sympathetic resonance: on a real Pipa an undamped string answers when another one is plucked, which is what gives the tail its depth. That coupling is the largest audible difference left
+- The body filter bank and the per-string loop parameters are now fitted from recordings of my own instrument, but only for the four open strings at one dynamic level. The high frets still use the general model rather than measured data. The first 30 ms of the attack now follow a fitted curve, but stopped notes and high frets still inherit the open-string shape
+- The measured model inherits the same boundary. Its partials were fitted on the open strings; a stopped note is reached by scaling the stack and by weighting partials for the pluck point, both of which follow the physics of a shorter string but neither of which was measured on a stopped note. The app still plays no sampled audio: the residual is a noise layer generated by the model, not a cut from a recording
+- The fitted open strings sit 4 to 11 cents above equal temperament. The app pulls each one onto its note so the readout, the tuner and the ear agree, which means the pitch being played is a fraction of a semitone away from the fitted one
+- The six sympathetic couplings are measured at open pitch, at one dynamic level, with the undamped strings ringing freely. Stopped notes and the damping of a string under the finger still use the general model
 - The Bundle Identifier is `com.zehuiwu.electricpipa`; swap in your own team's identifier before shipping
 - The brightness slider moves all four strings together; per-string brightness is already in the engine and only needs surfacing in the UI
 - Audio on the simulator works, but a real device is the better reference for how the tone sits
@@ -309,7 +363,7 @@ Source code of a personal project; discussion and learning welcome.
 
 # 电子琵琶 · Electric Pipa
 
-一款可在 iPhone / iPad 上弹奏的**物理建模合成**电子琵琶。所有声音都在手机本地、实时用数字波导算法算出来——不是在播放采样,是把琵琶这件乐器用代码重新造了一遍,一根弦一根弦地造,连琴体一起。内核起点是 1983 年的 Karplus-Strong 算法及其后的标准扩展形态,演进方向是 2020 年代的可微分物理建模:方程不变,用梯度下降对真实乐器的录音端到端拟合参数。
+一款可在 iPhone / iPad 上弹奏的**物理建模合成**电子琵琶。所有声音都在手机本地实时算出来,不播放采样库里的音频。现在有两套模型:一套 Karplus-Strong 数字波导,从方程出发把每个音算出来,四弦 32 音位全靠它;一套从自己录音里量出来的模态模型,每弦 44 到 90 个分音,各带自己的音头与衰减,v2.7 起作为默认音色,并与当初听过后认可的那遍音频逐采样对齐。演进方向是 2020 年代的可微分物理建模:方程不变,用梯度下降对真实乐器的录音端到端拟合参数。
 
 > 个人项目 · 源于自己的习琴需要,在长期练习中持续打磨
 >
@@ -317,6 +371,8 @@ Source code of a personal project; discussion and learning welcome.
 > 学校:武汉康礼高级中学（Wuhan Cogdel Cranleigh High School）
 
 我自幼学习琵琶演奏。软件乐器大多覆盖西方管弦,琵琶很少有用物理建模做的实现,于是我自己写了一个,顺带把自己这件乐器的声学原理弄明白。这个仓库就是这条探索线。
+
+我之前做的一个项目 PluckBuddy 是琵琶陪练工具,但它有个前提:手里得有一把真琴。想把它分享给身边人时我发现,多数人根本不认识琵琶,家里也没有琴,于是这个 App 就用不上——门槛卡在「得先有一把琴」上。所以我决定在软件里造一把:打开手机就能听、能看、能弹,不需要自己有琵琶。
 
 ## 本项目的技术贡献
 
@@ -382,6 +438,13 @@ Source code of a personal project; discussion and learning welcome.
 - 离线渲染器（`Renderer/main.swift`）做全音域校验:四空弦 ±0.2 音分、128 个音位解析法 0.00 音分、高音区自相关 ±0.5 音分,全部远在人耳可辨的约 ±5 音分之内。
 - `PipaAudio/` 收录渲染器写出的 7 段 24-bit WAV:空弦、五声音阶、轮指、扫弦、推拉弦滑音、一段乐句、合成琴体脉冲响应。
 
+### 贡献 6 · 第二种声音:乐器按实测的样子发声
+
+- 四根空弦另有一套从录音量出来的模态模型:每弦 44 到 90 个分音,各带快慢两段衰减、邻近拍频对,逐分音有立体声增益与相位,再加一层 1.5 s 残余,承担分音装不下的那部分噪声。每个数都来自对我自己录音的拟合,没有手工调过的值
+- 它是对着拟合所用的那遍录音逐采样验的:每弦 57.6 万帧,最大误差 6e-10,也就是那个 24-bit 文件本身的量化误差。所以它发出来的就是当初听过并认可的声音,而不是它的近似
+- 一条拟合好的空弦只覆盖一个音高,其余音位靠整体缩放分音组延伸;拨弦点则按拨片压在节点上的程度给分音加权。在实测的那个拨弦点上,两步都恰好是恒等变换,中性拨弦就是验收音色;离开它,音色按弦的物理规律走
+- 波导仍留在 App 内作第二套模型,可在演奏设置里切换,同一段乐句能直接对比。事件队列、滚奏时钟与渲染块两套共用,所以选择只在启动时做一次,音频路径里没有逐采样分支
+
 ## 领域坐标 · 从 1983 到可微分物理建模
 
 **1983 年的算法是起点,不是天花板。** 教科书版 Karplus-Strong 环路只有一行代码。本项目叠加在它之上的一切,随基频缩放的环路低通、全通分数延迟、琴体滤波器组、Commuted Synthesis,都来自 1983 年之后几十年间的扩展,合起来就是这个算法的标准现代形态。2020 年代真正的新东西不在方程,而在参数的获取方式。
@@ -410,6 +473,7 @@ flowchart TB
     end
     subgraph AUDIO ["音频渲染线程"]
         Q["SPSC 事件队列<br/>无锁、样本精度"]
+        M["PipaKitSynth<br/>实测模态模型（默认）"]
         S1["PipaString × 4<br/>数字波导"]
         B["PipaBody<br/>五个共振峰"]
         G["总增益"]
@@ -417,10 +481,12 @@ flowchart TB
     U1 --> U2
     U2 --> U3
     U3 -->|"只传意图"| Q
+    Q --> M
     Q --> S1
+    M --> G
     S1 --> B
     B --> G
-    G --> OUT["AVAudioSourceNode → output node"]
+    G --> OUT["AVAudioSourceNode → output node, 立体声"]
 ```
 
 | 阶段 | 职责 | 关键文件 |
@@ -428,6 +494,8 @@ flowchart TB
 | 交互 | 两段式:可旋转的 3D 观琴页看构造,2D 照片琴面演奏;只有 2D 面接拨弦与扫弦,横划扫弦不再被当作转视角 | `App/Pipa3DBrowseView.swift`、`App/PipaPartAnnotations.swift`、`App/Pipa3DGeometry.swift`、`App/FretboardView.swift`（`PipaBoardView`）、`App/PipaView.swift` |
 | 音频图装配 | 音频会话、源节点格式、渲染块工厂 | `Audio/AudioEngine.swift` |
 | 事件队列 | 无锁 SPSC 环形缓冲,样本精度调度 | `Audio/AudioEngine.swift`（`PipaAudioCore`） |
+| 音源 | 两套模型实现同一个接口,启动时选一套 | `Core/PipaSoundEngine.swift` |
+| 实测弦模型 | 四空弦的分音、拍频对与残余,拟合自录音;按音位整体缩放分音组 | `Core/PipaKitModel.swift`、`Core/PipaKitVoice.swift`、`Core/PipaKitSynth.swift`、`Core/KitResources/` |
 | 弦模型 | 数字波导、环路低通、全通分数延迟 | `Core/PipaString.swift` |
 | 琴体 | 五个共振峰、Commuted Synthesis | `Core/PipaBody.swift` |
 | 四弦引擎 | 分弦音色梯度、技法调度 | `Core/PipaSynth.swift` |
@@ -462,6 +530,11 @@ ElectricPipa/
 │   ├── PipaString.swift      # 单弦数字波导,含上述三处修正
 │   ├── PipaBody.swift        # 琴体共振峰、Commuted Synthesis、Biquad
 │   ├── PipaSynth.swift       # 四弦引擎、扫弦与轮指调度
+│   ├── PipaSoundEngine.swift # 两套音源共同实现的接口
+│   ├── PipaKitModel.swift    # 实测模态模型的解码与合法性检查
+│   ├── PipaKitVoice.swift    # 一个音:分音、拍频对、残余、拨弦加权、止音淡出
+│   ├── PipaKitSynth.swift    # 四路实测声部、琴码耦合、立体声混音
+│   ├── KitResources/         # model.json 与四条残余层（ElectricPipaKit 1.0.0）
 │   └── WavFile.swift         # 24-bit WAV 读写
 ├── Audio/
 │   └── AudioEngine.swift     # AVAudioEngine 实时渲染、无锁事件队列
@@ -479,6 +552,8 @@ ElectricPipa/
 │   ├── verify-ui-geometry.swift
 │   ├── verify-3d-geometry.swift
 │   ├── verify-3d-app-geometry.swift
+│   ├── verify-kit-model.swift # 移植保真度、音高、拨弦点、开销、内核级渲染、试听文件
+│   ├── kit-fixtures/         # 音色包自带的基准采样与峰值
 │   ├── export_fret_anchors.py
 │   ├── inspect-recordings.py
 │   ├── prepare_back_asset.py
@@ -593,10 +668,43 @@ xcrun swiftc -swift-version 6 -o PipaRenderer \
 - 按三面重写部位语义:正面 7 个、背面 3 个、侧面 1 个,每个配一段讲工艺与文化的中英介绍——如意头、凤凰台、朱载堉十二平均律、《琵琶行》都在其中。静态红点改成呼吸亮点;点一下出部位名称,再点名称展开介绍
 - 按照片重新校准热点:正面弦轴原先悬在空白处,「相」落在两根相条之间。演奏琴面另加返回按钮回到观琴页
 
+### v2.4 · 让录音决定拨弦形状与余音(2026-11-17)
+
+- 义甲留下的梳状零点原先钉在整数延迟上,深度固定。现在两处都放开:零点落在两个采样点之间的实测位置,每根弦各有自己的深度。硬甲片挖得深,粗缠弦抹得浅,由数据决定。用 Swift 真内核复核,加权谐波误差从 286 降到 229,中弦第 9 谐波从偏离录音 +22 dB 收到 +1.8 dB
+- 拨响一根弦时,另外三根现在会经共用琴码被带动。六对耦合系数来自同一批录音里其他弦基频处的窄峰:220 Hz 拨弦时出现的 110 Hz 分量,只能是缠弦在应和。拨弦声与共鸣声分别经过同一组琴体滤波,因为滤波器是线性的,分开滤再相加与混在一起滤完全等价
+- 共鸣声很轻、起振也慢,不会破坏已拟合的音头。四根弦全部经真 Swift 内核渲染后,交叉弦频点误差从 66 dB 降到 6 dB,拨弦弦自身的谐波误差不变。拟合脚本与 App 现在跑的是同一组数
+
+### v2.5 · 录音里有钢,就还原钢(2026-11-17)
+
+- 亮度拟合把子弦的环路滤波留得太暗,8–12 kHz 那批泛音正是钢丝琵琶的锋芒所在,却被压掉了。录音里这段比模型高 22.8 dB,老合成比录音低 20.6 dB,两头差了 43 dB。现在子弦直接锁定环路系数,不再由亮度推算,另外三根仍走拟合路线。子弦高频段收敛到离录音 4.7 dB,其余三根逐采样不变
+
+### v2.6 · 前 30 毫秒的形状(2026-11-17)
+
+- 老音头是一条几毫秒的单调余弦斜坡,做不出真拨弦的过冲,短到也听不出来。对多遍录音比 Hilbert 包络,真琴起音用 8–12 ms 升到稳态的约 1.4 倍,再在 20–30 ms 内落回。三遍取中位数后过冲峰落在 11 ms
+- 现在音头改用从录音测出的瞬态增益,不再是猜出来的斜坡。它升过 1 再回落,按 1 ms 一条的拟合曲线走。30 ms 之后增益精确等于 1,稳态谱一点不动:真 Swift 内核开与不开这条曲线,100–300 ms 的每个谐波完全一致,音头包络对录音的误差降了约三分之一
+- 增益在琴体滤波之前、按弦分别施加,已拟合的频谱形状和共鸣声都不受影响
+
+### v2.7 · 把乐器按实测的样子发声（2026-11-18）
+
+- 四根空弦现在由拟合自录音的模态模型发声:每弦 44 到 90 个分音,各带快慢两段衰减、邻近拍频对、逐分音的立体声增益与相位,外加 1.5 s 残余层。与同一遍录音的 24-bit 验收音频逐采样比对,最大误差 6e-10,也就是这个文件本身的量化误差
+- 拟合测出的空弦是 110.585、147.19、165.255、221.44 Hz,比 A-d-e-a 高 4 到 11 音分。现在每根弦都拉回平均律,让音名读数、调音器与耳朵三者一致;音域靠整体缩放分音组延伸,拨弦点则按拨片下节点的位置给分音加权,在拟合所用的那个拨弦点上这个权重恰好等于 1
+- 明暗改成频谱倾斜,止音改成快速淡出,事件队列、滚奏时钟、同情共振与渲染块都没有动。波导模型仍留在 App 内,可在演奏设置中切换,同一段乐句能直接对比两种做法
+- 校验（`Scripts/verify-kit-model.swift`）:每弦 17 个基准采样点误差在 1.2e-9 内,四空弦与抽样音位自相关都在 ±3 音分内,滚奏止音后 100 ms 静音,四弦同时发声约 20 倍实时（M 系列 Mac 上占单核约 5%）,44.1 kHz 设备在残余层重采样后音高与电平都不变（电平差 0.1%）
+- 顺带修正:触摸位置此前左右反了。音频侧把拨弦点算作离琴桥的距离,琴面却按离弦枕的距离上报,于是贴着琴桥拨弦听起来像贴着相拨
+
+### v2.8 · 弹几下就不出声的原因（2026-11-18）
+
+- 一个只在真机上出现的问题:弹三四下之后琴弦不再发声,按一次止音又能再响几下。根因不在音频会话,而在渲染回调超时。CoreAudio 自己就把答案打了出来:`IOWorkLoop: skipping cycle due to overload`。Debug 配置把合成循环按未优化编译,一根在响的弦就已经超出单个缓冲区的时间预算,而每拨一根弦,它的 44 到 90 个分音都会永久加进这份负载
+- 两处改动。Debug 配置现在和 Release 一样优化编译,四弦齐鸣从占单核 384% 降到 5%;声部在分音与残余层衰减到 -120 dBFS 以下后自行释放,响完的弦不再占用渲染线程,直到下一次被拨响
+- 音色没有变:39 项校验照旧全过,基准采样点仍在 1.2e-9 内,而释放门槛落在扬声器自身底噪之下
+- 控制台探针也收起来了。剩下的日志只在"有声部在响却一个样本都没输出"时才打印,而这正是过去唯一看不见的那种状态
+
 ## 已知限制 / 待改进
 
-- 琴体滤波器与每弦环路参数已用自己的录音拟合,但只覆盖四根空弦、单一力度。起振瞬态、高把位与弦间耦合仍沿用通用模型
-- 合成声还缺同情共振:真琵琶上一根弦被拨响时,未止音的邻弦会跟着共鸣,余音因此有层次。这是目前听感上最大的差距
+- 琴体滤波器与每弦环路参数已用自己的录音拟合,但只覆盖四根空弦、单一力度。高把位仍沿用通用模型。前 30 ms 的音头现在按拟合曲线走,但按弦音与高把位仍沿用空弦的那条形状
+- 六对同情共振耦合系数是在空弦、单一力度、其他弦自由共振的条件下测的。按弦后的音高与手指止音仍沿用通用模型
+- 实测模型有同样的边界:分音是在空弦上拟合的。按弦音靠缩放分音组延伸,拨弦位置靠给分音加权,两者都遵循短弦的物理,但都没有在按弦状态下实测过。App 仍不播放采样音频:残余层是模型生成的噪声层,不是从录音里剪下的一段
+- 拟合出的空弦比平均律高 4 到 11 音分。App 把每根弦拉回它的音名,让读数、调音器与耳朵三者一致,因此实际发出的音高与拟合值相差不到半个半音
 - Bundle Identifier 现在是 `com.zehuiwu.electricpipa`,上架前换成你自己的团队标识
 - 明暗滑块统一移动四根弦;分弦亮度引擎里已经有,只需在界面上暴露
 - 模拟器上音频可用,但音色落位以真机为更可靠的参考

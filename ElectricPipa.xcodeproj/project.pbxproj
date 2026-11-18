@@ -23,6 +23,16 @@
 		B3D0000100000000000000A4 /* Pipa3DBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000100000000000000A3 /* Pipa3DBoardView.swift */; };
 		B3D0000200000000000000B2 /* Pipa3DBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000200000000000000B1 /* Pipa3DBrowseView.swift */; };
 		B3D0000200000000000000B4 /* PipaPartAnnotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D0000200000000000000B3 /* PipaPartAnnotations.swift */; };
+		B3E1000100000000000000C2 /* PipaKitModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E1000100000000000000C1 /* PipaKitModel.swift */; };
+		B3E1000100000000000000C4 /* PipaKitVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E1000100000000000000C3 /* PipaKitVoice.swift */; };
+		B3E1000100000000000000C6 /* PipaKitSynth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E1000100000000000000C5 /* PipaKitSynth.swift */; };
+		B3E1000100000000000000C8 /* PipaSoundEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E1000100000000000000C7 /* PipaSoundEngine.swift */; };
+		B3E1000200000000000000D3 /* model.json in Resources */ = {isa = PBXBuildFile; fileRef = B3E1000200000000000000D2 /* model.json */; };
+		B3E1000200000000000000D5 /* s1-residual.f32 in Resources */ = {isa = PBXBuildFile; fileRef = B3E1000200000000000000D4 /* s1-residual.f32 */; };
+		B3E1000200000000000000D7 /* s2-residual.f32 in Resources */ = {isa = PBXBuildFile; fileRef = B3E1000200000000000000D6 /* s2-residual.f32 */; };
+		B3E1000200000000000000D9 /* s3-residual.f32 in Resources */ = {isa = PBXBuildFile; fileRef = B3E1000200000000000000D8 /* s3-residual.f32 */; };
+		B3E1000200000000000000DB /* s4-residual.f32 in Resources */ = {isa = PBXBuildFile; fileRef = B3E1000200000000000000DA /* s4-residual.f32 */; };
+		B3E1000200000000000000DD /* provenance.json in Resources */ = {isa = PBXBuildFile; fileRef = B3E1000200000000000000DC /* provenance.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +54,16 @@
 		B3D0000100000000000000A3 /* Pipa3DBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pipa3DBoardView.swift; sourceTree = "<group>"; };
 		B3D0000200000000000000B1 /* Pipa3DBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pipa3DBrowseView.swift; sourceTree = "<group>"; };
 		B3D0000200000000000000B3 /* PipaPartAnnotations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaPartAnnotations.swift; sourceTree = "<group>"; };
+		B3E1000100000000000000C1 /* PipaKitModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaKitModel.swift; sourceTree = "<group>"; };
+		B3E1000100000000000000C3 /* PipaKitVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaKitVoice.swift; sourceTree = "<group>"; };
+		B3E1000100000000000000C5 /* PipaKitSynth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaKitSynth.swift; sourceTree = "<group>"; };
+		B3E1000100000000000000C7 /* PipaSoundEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipaSoundEngine.swift; sourceTree = "<group>"; };
+		B3E1000200000000000000D2 /* model.json */ = {isa = PBXFileReference; lastKnownFileType = file; path = model.json; sourceTree = "<group>"; };
+		B3E1000200000000000000D4 /* s1-residual.f32 */ = {isa = PBXFileReference; lastKnownFileType = file; path = s1-residual.f32; sourceTree = "<group>"; };
+		B3E1000200000000000000D6 /* s2-residual.f32 */ = {isa = PBXFileReference; lastKnownFileType = file; path = s2-residual.f32; sourceTree = "<group>"; };
+		B3E1000200000000000000D8 /* s3-residual.f32 */ = {isa = PBXFileReference; lastKnownFileType = file; path = s3-residual.f32; sourceTree = "<group>"; };
+		B3E1000200000000000000DA /* s4-residual.f32 */ = {isa = PBXFileReference; lastKnownFileType = file; path = s4-residual.f32; sourceTree = "<group>"; };
+		B3E1000200000000000000DC /* provenance.json */ = {isa = PBXFileReference; lastKnownFileType = file; path = provenance.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +119,11 @@
 				520D5ED709B5433F90CA53F1 /* PipaBody.swift */,
 				0BD51FCCE049476E8605035F /* WavFile.swift */,
 				811357FBFB8345028163B715 /* PipaSynth.swift */,
+				B3E1000100000000000000C1 /* PipaKitModel.swift */,
+				B3E1000100000000000000C3 /* PipaKitVoice.swift */,
+				B3E1000100000000000000C5 /* PipaKitSynth.swift */,
+				B3E1000100000000000000C7 /* PipaSoundEngine.swift */,
+				B3E1000200000000000000D1 /* KitResources */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -117,6 +142,19 @@
 				F1A2B3C4D5E60718293A4B5C /* PipaAudioCore.swift */,
 			);
 			path = Audio;
+			sourceTree = "<group>";
+		};
+		B3E1000200000000000000D1 /* KitResources */ = {
+			isa = PBXGroup;
+			children = (
+				B3E1000200000000000000D2 /* model.json */,
+				B3E1000200000000000000D4 /* s1-residual.f32 */,
+				B3E1000200000000000000D6 /* s2-residual.f32 */,
+				B3E1000200000000000000D8 /* s3-residual.f32 */,
+				B3E1000200000000000000DA /* s4-residual.f32 */,
+				B3E1000200000000000000DC /* provenance.json */,
+			);
+			path = KitResources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -178,6 +216,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				ABCDEF012345678900000002 /* Assets.xcassets in Resources */,
+				B3E1000200000000000000D3 /* model.json in Resources */,
+				B3E1000200000000000000D5 /* s1-residual.f32 in Resources */,
+				B3E1000200000000000000D7 /* s2-residual.f32 in Resources */,
+				B3E1000200000000000000D9 /* s3-residual.f32 in Resources */,
+				B3E1000200000000000000DB /* s4-residual.f32 in Resources */,
+				B3E1000200000000000000DD /* provenance.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -203,6 +247,10 @@
 				B3D0000100000000000000A4 /* Pipa3DBoardView.swift in Sources */,
 				B3D0000200000000000000B2 /* Pipa3DBrowseView.swift in Sources */,
 				B3D0000200000000000000B4 /* PipaPartAnnotations.swift in Sources */,
+				B3E1000100000000000000C2 /* PipaKitModel.swift in Sources */,
+				B3E1000100000000000000C4 /* PipaKitVoice.swift in Sources */,
+				B3E1000100000000000000C6 /* PipaKitSynth.swift in Sources */,
+				B3E1000100000000000000C8 /* PipaSoundEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -250,7 +298,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_COMPILATION_MODE = singlefile;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -305,7 +353,7 @@
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

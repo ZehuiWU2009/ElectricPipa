@@ -1,0 +1,37 @@
+{
+  "reference": "Accepted V3 s1\u2013s3 / V3.1 s4, six seconds, full stereo waveform; 24-bit quantization included in error",
+  "strings": [
+    {
+      "string": 1,
+      "frames": 288000,
+      "max_absolute_error_vs_accepted_24bit_wav": 5.960464477539063e-08,
+      "rms_error": 3.442465807305175e-08,
+      "peak": 0.7704249620437622,
+      "mac_render_seconds": 0.5176099999999999
+    },
+    {
+      "string": 2,
+      "frames": 288000,
+      "max_absolute_error_vs_accepted_24bit_wav": 5.960464477539063e-08,
+      "rms_error": 3.4478367295631685e-08,
+      "peak": 0.6953637599945068,
+      "mac_render_seconds": 0.1365185000000001
+    },
+    {
+      "string": 3,
+      "frames": 288000,
+      "max_absolute_error_vs_accepted_24bit_wav": 6.030313670635223e-08,
+      "rms_error": 3.443607274132502e-08,
+      "peak": 0.7870432138442993,
+      "mac_render_seconds": 0.1411045420000001
+    },
+    {
+      "string": 4,
+      "frames": 288000,
+      "max_absolute_error_vs_accepted_24bit_wav": 6.146728992462158e-08,
+      "rms_error": 3.441622215100791e-08,
+      "peak": 0.8076100945472717,
+      "mac_render_seconds": 0.18855116699999996
+    }
+  ]
+}

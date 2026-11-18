@@ -93,10 +93,14 @@ def biquad_coeff(freq, q, gain_db, sr=48000.0):
 
 @njit(cache=True)
 def render_one(freq, brightness, decay, velocity, position, peaks_b,
-               n, sr=48000.0, shelf_b=(1.0, 0.0, 0.0, 0.0, 0.0)):
+               n, sr=48000.0, shelf_b=(1.0, 0.0, 0.0, 0.0, 0.0),
+               comb_depth=0.7, direct_loop=-1.0):
     """Render one plucked string through the body filter bank."""
     w = 2.0*math.pi*max(freq,20.0)/sr
-    loop_coeff = solve_loop_coeff(loop_gain_for_brightness(brightness), w)
+    if direct_loop >= 0.0:
+        loop_coeff = min(max(direct_loop, 0.0), 0.9)
+    else:
+        loop_coeff = solve_loop_coeff(loop_gain_for_brightness(brightness), w)
     lg = loop_magnitude(loop_coeff, w)
     loss = max(-math.log(lg), 1e-9)
     maximum = 6.9078/(max(freq,20.0)*loss)
@@ -127,10 +131,19 @@ def render_one(freq, brightness, decay, velocity, position, peaks_b,
 
     pos = min(max(position,0.06),0.94)
     gain = min(max(velocity,0.0),1.0)
-    comb = max(1, int(length*pos))
-    if comb < length:
-        for i in range(length-1, comb-1, -1):
-            buf[i] -= 0.7*buf[i-comb]
+    # Fractional pluck point and tunable comb depth. Rounding the point to an
+    # integer sample quantises the notch frequencies; a sharp or soft plectrum
+    # changes how deep those notches cut. Neither belongs in a fixed constant.
+    comb_f = min(max(length*pos, 1.0), float(length-1))
+    comb_i = int(math.floor(comb_f))
+    comb_frac = comb_f - comb_i
+    depth = min(max(comb_depth, 0.0), 0.999)
+    if comb_i < length:
+        for i in range(length-1, comb_i-1, -1):
+            near = buf[i-comb_i]
+            far = buf[i-comb_i-1] if (i-comb_i-1) >= 0 else near
+            sample = near + comb_frac*(far-near)
+            buf[i] -= depth*sample
     mean = 0.0
     for i in range(length): mean += buf[i]
     mean /= length
@@ -174,16 +187,18 @@ _default_b = tuple(biquad_coeff(*p) for p in DEFAULT_PEAKS)
 
 
 def render(params, string=3, n=48000*6, peaks=None, sr=48000.0, position=0.5,
-           shelf=None):
+           shelf=None, comb_depth=0.7):
     b, d = params
     freq = midi_to_freq(OPEN_MIDI[string])
     pk = tuple(biquad_coeff(*p, sr=sr) for p in (peaks or DEFAULT_PEAKS))
     sb = low_shelf_coeff(*(shelf or DEFAULT_SHELF), sr=sr)
-    return render_one(freq, b, d, 0.9, position, pk, n, sr, sb)
+    return render_one(freq, b, d, 0.9, position, pk, n, sr, sb, comb_depth)
 
 
 def render_at(freq, brightness, decay, position, peaks=None, velocity=0.9,
-              n=48000*3, sr=48000.0, shelf=None):
+              n=48000*3, sr=48000.0, shelf=None, comb_depth=0.7,
+              direct_loop=-1.0):
     pk = tuple(biquad_coeff(*p, sr=sr) for p in (peaks or DEFAULT_PEAKS))
     sb = low_shelf_coeff(*(shelf or DEFAULT_SHELF), sr=sr)
-    return render_one(freq, brightness, decay, velocity, position, pk, n, sr, sb)
+    return render_one(freq, brightness, decay, velocity, position, pk, n, sr, sb,
+                      comb_depth, direct_loop)

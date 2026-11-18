@@ -74,7 +74,13 @@ enum PipaGeometry {
         // softer than the string was fitted to sound.
         if location.y >= point(x: 0, y: 1246, in: rect).y { return 0.5 }
         if location.y < nutY(in: rect) { return 0.5 }
-        let fraction = (location.y - nutY(in: rect)) / (bridgeY(in: rect) - nutY(in: rect))
-        return Double(min(max(fraction, 0.15), 0.95))
+        // The audio side measures the pluck point from the bridge, which is
+        // what the fitted pluck spots are: 0.263 on the Chan string means a
+        // quarter of the speaking length away from the bridge, not from the
+        // nut. The touch arrives as a fraction from the nut, so it is mirrored
+        // here. Before this, tapping by the bridge sounded like tapping by the
+        // xiang and the other way round.
+        let fromNut = (location.y - nutY(in: rect)) / (bridgeY(in: rect) - nutY(in: rect))
+        return Double(min(max(1 - fromNut, 0.15), 0.95))
     }
 }

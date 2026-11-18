@@ -78,6 +78,21 @@ final class PipaString {
     private var brightness: Double = 0.6
     private var requestedDecay: Double = 2.0
 
+    /// Optional direct override of the loop low-pass coefficient. The fitted
+    /// brightness -> gain -> coefficient route pins s near 0.14, which kills
+    /// everything above 3 kHz. The Zi string is steel and its brightness lives
+    /// in the 8-12 kHz partials, so it uses a smaller s directly. Nil keeps the
+    /// original route for the other strings.
+    var directLoopCoeff: Double? {
+        didSet { retune() }
+    }
+
+    /// How deeply the comb notch at the pluck point cuts. A soft, broad
+    /// plectrum leaves the harmonics near the notch almost untouched; a hard,
+    /// narrow one (the celluloid pick used for these recordings) all but
+    /// removes them. Measured per string alongside brightness and decay.
+    var combDepth: Double = 0.7
+
 
     /// Leaky integrator estimate of the energy, used to decide whether the tail
     /// has died away.
@@ -210,7 +225,11 @@ final class PipaString {
     /// Recompute the timbre whenever the pitch changes, so the same tone
     /// character holds at every position.
     private func retune() {
-        loopCoeff = solveLoopCoefficient(targetGain: Self.loopGainForBrightness(brightness))
+        if let direct = directLoopCoeff {
+            loopCoeff = Float(min(max(direct, 0.0), 0.9))
+        } else {
+            loopCoeff = solveLoopCoefficient(targetGain: Self.loopGainForBrightness(brightness))
+        }
         updateDelay()
     }
 
@@ -277,10 +296,16 @@ final class PipaString {
 
         // Comb filter for the pluck point: harmonics with a node at the pluck
         // point cancel out, which is why the pluck position changes the tone.
-        let combDelay = max(1, Int(Double(length) * pos))
-        if combDelay < length {
-            for i in stride(from: length - 1, through: combDelay, by: -1) {
-                buffer[i] -= buffer[i - combDelay] * 0.7
+        let combFloat = min(max(Double(length) * pos, 1.0), Double(length - 1))
+        let combInt = Int(floor(combFloat))
+        let combFrac = Float(combFloat - Double(combInt))
+        let depth = Float(min(max(combDepth, 0.0), 0.999))
+        if combInt < length {
+            for i in stride(from: length - 1, through: combInt, by: -1) {
+                let near = buffer[i - combInt]
+                let far = i - combInt - 1 >= 0 ? buffer[i - combInt - 1] : near
+                let tap = near + combFrac * (far - near)
+                buffer[i] -= tap * depth
             }
         }
 

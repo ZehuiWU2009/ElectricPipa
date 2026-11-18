@@ -31,16 +31,20 @@ final class PipaBody {
         // any one mode.
         shelf = Biquad.lowShelf(
             sampleRate: sampleRate,
-            frequency: 300.0 * sizeScale,
-            gainDB: -16.0
+            frequency: 239.7466 * sizeScale,
+            gainDB: -29.6905
         )
 
+        // Fitted against the four open strings of the same instrument. The
+        // shelf above carries the broad low-frequency slope; these peaks only
+        // add the modes that sit on top of it. Each frequency is a property of
+        // the box, so sizeScale moves all of them together.
         let peaks: [(frequency: Double, q: Double, gainDB: Double)] = [
-            (205, 3.5, -6.0),   // Air-cavity resonance; the box gives little back this low
-            (420, 3.0, -2.0),   // First bending mode of the soundboard
-            (760, 2.6, 10.0),   // The bright, penetrating band every Pipa has
-            (1350, 2.2, 5.0),
-            (2600, 1.8, 0.0),   // High-frequency brightness; sets the grain of the metal-wound strings
+            (219.1703, 3.5, -8.0000),   // Air-cavity resonance
+            (420.0000, 3.0, -6.7711),   // First bending mode of the soundboard
+            (760.0000, 2.6, 16.0000),   // The bright, penetrating band every Pipa has
+            (1350.0000, 2.2, 5.4390),
+            (2600.0000, 1.8, -2.8511),  // Grain of the metal-wound strings
         ]
         filters = peaks.map { peak in
             Biquad.peaking(

@@ -16,7 +16,6 @@ SR = 48000.0
 OPEN_MIDI = [45, 50, 52, 57]   # A2 d3 e3 a3, the register the instrument sounds in
 CAPACITY = 4096
 
-
 def midi_to_freq(m):
     return 440.0 * 2.0 ** ((m - 69.0) / 12.0)
 
@@ -129,6 +128,11 @@ class String:
         self.damping = F(0.996)
         self.brightness = 0.6
         self.decay = 2.0
+        self.combDepth = 0.7
+        # Direct loop-coefficient override for the steel Zi string; mirrors
+        # PipaString.directLoopCoeff in Swift. None keeps the fitted brightness
+        # -> gain -> coefficient route used by the other strings.
+        self.directLoopCoeff = None
         self.energy = F(0)
         self.noise_state = np.uint32(seed)
         self._update_delay()
@@ -161,7 +165,10 @@ class String:
         self._apply_decay()
 
     def _retune(self):
-        self.loop_coeff = F(solve_loop_coeff(loop_gain_for_brightness(self.brightness), self.omega))
+        if self.directLoopCoeff is not None:
+            self.loop_coeff = F(min(max(self.directLoopCoeff, 0.0), 0.9))
+        else:
+            self.loop_coeff = F(solve_loop_coeff(loop_gain_for_brightness(self.brightness), self.omega))
         self._update_delay()
 
     def set_brightness(self, v):
@@ -190,10 +197,20 @@ class String:
         pos = min(max(position, 0.06), 0.94)
         for i in range(self.length):
             self.buffer[i] = self._noise()
-        comb = max(1, int(float(self.length) * pos))
-        if comb < self.length:
-            for i in range(self.length - 1, comb - 1, -1):
-                self.buffer[i] = F(self.buffer[i] - F(self.buffer[i - comb] * F(0.7)))
+        # Fractional pluck point and tunable comb depth: the notch frequencies
+        # follow the continuous position, and the depth follows the plectrum.
+        # Interpolate between the two neighbouring integer taps so the notch
+        # lands where the recording has it instead of being quantised.
+        comb_f = min(max(float(self.length) * pos, 1.0), float(self.length - 1))
+        comb_i = int(math.floor(comb_f))
+        frac = F(comb_f - comb_i)
+        depth = F(min(max(self.combDepth, 0.0), 0.999))
+        if comb_i < self.length:
+            for i in range(self.length - 1, comb_i - 1, -1):
+                near = self.buffer[i - comb_i]
+                far = self.buffer[i - comb_i - 1] if (i - comb_i - 1) >= 0 else near
+                sample = F(near + F(frac * F(far - near)))
+                self.buffer[i] = F(self.buffer[i] - F(sample * depth))
         mean = F(sum(float(v) for v in self.buffer[:self.length]) / self.length)
         peak = F(0)
         for i in range(self.length):
@@ -233,10 +250,52 @@ DEFAULT_PEAKS = [
 
 DEFAULT_SHELF = (300.0, -16.0)
 
+SYMPATHETIC_COUPLING = [
+    [0.0000, 0.0032, 0.0031, 0.0074],
+    [0.0032, 0.0000, 0.0036, 0.0054],
+    [0.0031, 0.0036, 0.0000, 0.0055],
+    [0.0074, 0.0054, 0.0055, 0.0000],
+]
+
+
+class SympatheticResonator:
+    """Python mirror of Swift SympatheticString, including float32 state."""
+
+    __slots__ = ("cos", "sin", "decay", "attack", "real", "imag", "level", "target")
+
+    def __init__(self, frequency, sr, decay_time):
+        omega = 2.0 * math.pi * frequency / sr
+        self.cos = F(math.cos(omega))
+        self.sin = F(math.sin(omega))
+        self.decay = F(math.exp(-1.0 / (max(decay_time, 0.05) * sr)))
+        self.attack = F(1.0 - math.exp(-1.0 / (0.03 * sr)))
+        self.real = F(1)
+        self.imag = F(0)
+        self.level = F(0)
+        self.target = F(0)
+
+    def excite(self, amount):
+        self.target = F(max(self.target, min(max(amount, 0.0), 1.0)))
+
+    def damp(self):
+        self.target = F(0)
+        self.level = F(0)
+        self.real = F(1)
+        self.imag = F(0)
+
+    def render(self):
+        self.target = F(self.target * self.decay)
+        self.level = F(self.level + F((self.target - self.level) * self.attack))
+        value = F(self.imag * self.level)
+        nxt = F(self.real * self.cos - self.imag * self.sin)
+        self.imag = F(self.real * self.sin + self.imag * self.cos)
+        self.real = nxt
+        return value
+
 
 class Synth:
     def __init__(self, brightness=None, decay=None, peaks=None, tune_octave=0, sr=SR,
-                 shelf=None):
+                 shelf=None, comb_depth=None, direct_loop=None):
         self.sr = sr
         self.strings = []
         pk = peaks if peaks is not None else DEFAULT_PEAKS
@@ -253,10 +312,24 @@ class Synth:
             d = decay[i] if (decay is not None and decay[i] is not None) else dd
             s.set_brightness(b)
             s.set_decay(d)
+            if comb_depth is not None and comb_depth[i] is not None:
+                s.combDepth = float(comb_depth[i])
+            if direct_loop is not None and direct_loop[i] is not None:
+                s.directLoopCoeff = float(direct_loop[i])
             self.strings.append(s)
+        self.resonators = [SympatheticResonator(self.strings[i].frequency, sr, d)
+                           for i in range(4) for d in [decay[i] if decay is not None else
+                                                       4.6 - 2.6 * (i / 3.0)]]
 
     def pluck(self, string, velocity=0.9, position=0.5):
         self.strings[string].pluck(velocity, position)
+        for i in range(4):
+            if i != string:
+                self.resonators[i].excite(F(SYMPATHETIC_COUPLING[string][i] * velocity))
+
+    def damp(self, string):
+        self.strings[string].damp()
+        self.resonators[string].damp()
 
     def render(self, n):
         out = np.empty(n, dtype=np.float32)
@@ -264,6 +337,8 @@ class Synth:
             v = F(0)
             for s in self.strings:
                 v = F(v + s.render())
+            for r in self.resonators:
+                v = F(v + r.render())
             v = self.shelf.process(v)
             for flt in self.filters:
                 v = flt.process(v)

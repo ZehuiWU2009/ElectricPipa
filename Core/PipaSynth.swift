@@ -5,18 +5,33 @@ import Foundation
 /// Each string is its own digital waveguide. The four are mixed and then fed
 /// through the body filter bank together: on a real instrument all four strings
 /// couple into one box, so the body is applied once rather than once per string.
-final class PipaSynth {
+final class PipaSynth: PipaSoundEngine {
 
     static let stringCount = 4
 
+    /// How long the direct voice takes to rise after the pick releases the
+    /// string. Measured from the first pluck of each take: the thick strings
+    /// take about 10 ms to reach their full level, the thin ones about 4 ms.
+    /// This is an output envelope, not a change to the waveguide: the fitted
+    /// steady spectrum is left alone.
+    static let stringAttackSeconds: [Double] = [0.010, 0.005, 0.006, 0.004]
+
     let sampleRate: Double
     private var strings: [PipaString] = []
+    private var resonators: [SympatheticString] = []
+    private var attackElapsed: [Int] = []
+    private var attackLength: [Int] = []
 
     /// Body resonance, applied to the mixed output of the four strings.
     private let body: PipaBody
 
     /// Master output gain.
     var masterGain: Float = 0.5
+
+    /// Diagnosis only. See PipaSoundEngine. A waveguide string counts as
+    /// sounding while its energy is above the level that is still audible.
+    var diagnosticVoices: Int { strings.reduce(0) { $0 + ($1.isRinging ? 1 : 0) } }
+    private(set) var diagnosticPluckCount = 0
 
     /// Per-string brightness and decay, fitted against a recorded set of four
     /// open strings on a Jiaozhi huangtan Pipa (48 kHz, 24-bit, Zoom H6).
@@ -29,15 +44,45 @@ final class PipaSynth {
     /// Brightness sits near the top of its range on purpose. On the recorded
     /// instrument the fundamental is 35 to 40 dB below the fourth harmonic, and
     /// a darker setting cannot hold that much high-frequency content alive.
-    static let stringBrightness: [Double] = [0.9704, 0.9843, 0.9886, 0.9960]
-    static let stringDecayTime: [Double] = [40.00, 24.22, 12.73, 6.41]
+    static let stringBrightness: [Double] = [0.9704, 0.9852, 0.9927, 0.9968]
+    static let stringDecayTime: [Double] = [40.00, 21.86, 10.86, 6.20]
 
     /// Where the right hand strikes each string, as a fraction of the speaking
     /// length. Measured off the recordings: between a fifth and a third of the
     /// string from the bridge, not the middle. The middle of a string is where
     /// the fourth harmonic has a node, which is why the old 0.5 setting thinned
     /// the tone out.
-    static let stringPluckPosition: [Double] = [0.263, 0.134, 0.120, 0.315]
+    static let stringPluckPosition: [Double] = [0.263, 0.129, 0.114, 0.306]
+
+    /// How sharply the comb notch cuts at each pluck point, fitted together
+    /// with the positions above. A narrow celluloid pick digs a deep notch;
+    /// the thicker Chan string smears it. 0.7 was the old one-size-fits-all
+    /// value that left the middle two strings far from the recorded spectrum.
+    static let stringCombDepth: [Double] = [0.7904, 0.9850, 0.9850, 0.9850]
+
+    /// Direct loop low-pass coefficient for the steel Zi string. The fitted
+    /// brightness route leaves this string at s about 0.144, which rolls off
+    /// 8-12 kHz by more than 40 dB against the recording. The Zi string is the
+    /// bright one on a real instrument: its metal partials are what give a Pipa
+    /// its edge. Fixing s at 0.05 keeps those partials alive while decay still
+    /// controls the tail independently. The other three strings keep the fitted
+    /// route. Measured against three takes; nil means use the fitted route.
+    static let stringDirectLoopCoeff: [Double?] = [nil, nil, nil, 0.05]
+
+    /// Bridge coupling between each pair of open strings. Plucking one string
+    /// drives the bridge, and the other three answer at their own pitches.
+    /// Six numbers, one per pair, fitted from the narrow peaks at the other
+    /// strings' fundamentals in the same recordings. The 220 Hz string is the
+    /// strongest voice: a 110 Hz peak while it sounds cannot come from its own
+    /// harmonics, so it has to be the Chan string ringing along. Conversely the
+    /// Chan string's 220 Hz peak is its own second harmonic and cannot be used
+    /// to measure the coupling back, so that direction shares the pair value.
+    static let sympatheticCoupling: [[Double]] = [
+        [0.0000, 0.0032, 0.0031, 0.0074],   // Chan -> Lao, Zhong, Zi
+        [0.0032, 0.0000, 0.0036, 0.0054],   // Lao
+        [0.0031, 0.0036, 0.0000, 0.0055],   // Zhong
+        [0.0074, 0.0054, 0.0055, 0.0000],   // Zi
+    ]
 
     /// Global tone trim, 0.5 is neutral. The per-string values above are the
     /// measured truth, so the brightness control shifts them together instead of
@@ -53,7 +98,15 @@ final class PipaSynth {
             let string = PipaString(sampleRate: sampleRate, frequency: frequency)
             string.setBrightness(Self.stringBrightness[index])
             string.setDecayTime(Self.stringDecayTime[index])
+            string.combDepth = Self.stringCombDepth[index]
+            string.directLoopCoeff = Self.stringDirectLoopCoeff[index]
             strings.append(string)
+            resonators.append(SympatheticString(
+                frequency: frequency,
+                sampleRate: sampleRate,
+                decayTime: Self.stringDecayTime[index]))
+            attackLength.append(max(1, Int((Self.stringAttackSeconds[index] * sampleRate).rounded())))
+            attackElapsed.append(0)
         }
     }
 
@@ -69,6 +122,7 @@ final class PipaSynth {
     ///     scales with it. A smaller value is closer to the bridge.
     func pluck(string: Int, fret: Int, velocity: Double = 0.8, position: Double = 0.5) {
         guard strings.indices.contains(string) else { return }
+        diagnosticPluckCount += 1
         let target = strings[string]
 
         // Set the pitch first: both the tail length and the delay-line length
@@ -82,6 +136,19 @@ final class PipaSynth {
         target.setDecayTime(baseDecay * fretFactor)
 
         target.pluck(amplitude: velocity, position: Self.measuredPosition(position, string: string))
+        attackElapsed[string] = 0
+
+        exciteOthers(string: string, velocity: velocity)
+    }
+
+    /// A strike travels through the bridge into the strings that were not
+    /// touched. They answer at their own open pitch, quietly and with a short
+    /// build-up rather than a click: the bridge has to start them moving.
+    private func exciteOthers(string: Int, velocity: Double) {
+        for other in resonators.indices where other != string {
+            let coupling = Self.sympatheticCoupling[string][other]
+            resonators[other].excite(Float(coupling * min(max(velocity, 0.0), 1.0)))
+        }
     }
 
     /// Map a conventional pluck position onto the measured region for a string.
@@ -112,6 +179,8 @@ final class PipaSynth {
         strings[string].frequency = frequency
         strings[string].pluck(amplitude: velocity,
                               position: Self.measuredPosition(position, string: string))
+        attackElapsed[string] = 0
+        exciteOthers(string: string, velocity: velocity)
     }
 
     /// Push or pull the string, gliding its pitch continuously to the target
@@ -121,15 +190,21 @@ final class PipaSynth {
         strings[string].frequency = frequency
     }
 
-    /// Damp one string.
+    /// Damp one string. Pressing a string stops its own waveguide and the
+    /// sympathetic voice it was carrying, which is what a player hears when
+    /// they lay a finger across an instrument that is ringing.
     func damp(string: Int) {
         guard strings.indices.contains(string) else { return }
         strings[string].damp()
+        resonators[string].damp()
     }
 
     /// Damp every string.
     func dampAll() {
-        for index in strings.indices { strings[index].damp() }
+        for index in strings.indices {
+            strings[index].damp()
+            resonators[index].damp()
+        }
     }
 
     /// Shift the tone of all four strings together, 0.5 being the measured
@@ -191,9 +266,31 @@ final class PipaSynth {
         Scheduler.shared.advance(sampleRate: sampleRate)
         var sum: Float = 0
         for index in strings.indices {
-            sum += strings[index].renderSample()
+            let direct = strings[index].renderSample()
+            sum += direct * attackGain(index)
+            sum += resonators[index].renderSample()
         }
         return body.process(sum) * masterGain
+    }
+
+    /// Smooth rise from silence to full level over the measured few
+    /// milliseconds. A cosine keeps both the start and the end free of the
+    /// step that a linear ramp would put at either edge. The waveguide keeps
+    /// running underneath, so only the onset changes; every harmonic measured
+    /// from 100 ms onward is untouched.
+    private func attackGain(_ index: Int) -> Float {
+        let elapsed = attackElapsed[index]
+        let length = attackLength[index]
+        if elapsed >= length { return 1 }
+        attackElapsed[index] = elapsed + 1
+        let phase = Float(elapsed) / Float(length)
+        return Float(0.5 - 0.5 * cos(Double.pi * Double(phase)))
+    }
+
+    /// The core asks for a stereo frame; a waveguide string is mono, so both
+    /// channels carry the same sample.
+    func renderFrame() -> PipaFrame {
+        PipaFrame(mono: renderSample())
     }
 
     /// Render a stretch into a buffer.
@@ -201,6 +298,55 @@ final class PipaSynth {
         for index in 0..<count {
             output[index] = renderSample()
         }
+    }
+}
+
+/// One open string answering a pluck on another string.
+///
+/// The bridge is a shared path, so every strike sets all four strings in
+/// motion, not just the one the pick touched. A driven string does not start
+/// with the sharp transient of a pluck: it takes a few milliseconds to build
+/// up and then rings at its own pitch, which is why the same physics is a
+/// different sound from the direct voice. A rotating phasor keeps the frequency
+/// exact without accumulating the phase error that a large angle would cause
+/// after minutes of continuous sound.
+struct SympatheticString {
+    private let cosStep: Float
+    private let sinStep: Float
+    private let decayPerSample: Float
+    private let attackPerSample: Float
+    private var real: Float = 1
+    private var imag: Float = 0
+    private var level: Float = 0
+    private var target: Float = 0
+
+    init(frequency: Double, sampleRate: Double, decayTime: Double) {
+        let omega = 2.0 * Double.pi * frequency / sampleRate
+        cosStep = Float(cos(omega))
+        sinStep = Float(sin(omega))
+        decayPerSample = Float(exp(-1.0 / (max(decayTime, 0.05) * sampleRate)))
+        attackPerSample = Float(1.0 - exp(-1.0 / (0.03 * sampleRate)))
+    }
+
+    mutating func excite(_ amount: Float) {
+        target = max(target, min(max(amount, 0), 1))
+    }
+
+    mutating func damp() {
+        target = 0
+        level = 0
+        real = 1
+        imag = 0
+    }
+
+    mutating func renderSample() -> Float {
+        target *= decayPerSample
+        level += (target - level) * attackPerSample
+        let value = imag * level
+        let nextReal = real * cosStep - imag * sinStep
+        imag = real * sinStep + imag * cosStep
+        real = nextReal
+        return value
     }
 }
 

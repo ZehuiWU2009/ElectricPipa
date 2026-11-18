@@ -1,0 +1,43 @@
+{
+  "model": "accepted V3 strings 1\u20133 plus V3.1 string 4",
+  "accepted_presets_sha256": "d2f95672f232c08e35dd368b97a40fc31ac154ae6301bb01b996c1d604cf976d",
+  "residual_note": "Procedurally generated low/mid residual from accepted 6-second render; not a source recording. First 1.5s stored as interleaved stereo Float32 LE. No raw recordings bundled.",
+  "strings": [
+    {
+      "string": 1,
+      "accepted_audio": "Recordings/pilot/fit-v3/audio/s1_v3.wav",
+      "audio_sha256": "1ca93d6e3e3052370d4849f9db480e98243a68b661fc2ae1c051677307c21e9d",
+      "model_gain": 0.1470155610832647,
+      "residual_file": "s1-residual.f32",
+      "residual_sha256": "500d2d6d14b8c83c4cd711a5c529ab0d15d2d3586a6b9c345b438d73fa6ffe1e",
+      "max_tail_truncation_error": 1.9597155552174057e-10
+    },
+    {
+      "string": 2,
+      "accepted_audio": "Recordings/pilot/fit-v3/audio/s2_v3.wav",
+      "audio_sha256": "ccab4bda0d2911d968a1cc77b77e638656caeb5f9dd2bb49d02fac42d09de062",
+      "model_gain": 0.15352631474911402,
+      "residual_file": "s2-residual.f32",
+      "residual_sha256": "6cc7ce94033aa5a0c7486d49c97976dc6b0cb136febabbbbb3e9383f18681c7f",
+      "max_tail_truncation_error": 1.4592857929214773e-10
+    },
+    {
+      "string": 3,
+      "accepted_audio": "Recordings/pilot/fit-v3/audio/s3_v3.wav",
+      "audio_sha256": "c94391a20f3df22d7028afabb59ff124ace9c26325e14db5ee5f98020c20ecd3",
+      "model_gain": 0.1347929369423779,
+      "residual_file": "s3-residual.f32",
+      "residual_sha256": "34d128098c520a9011bb47c10901d794c8ae5e0f2e880a42a44f889d04f1b566",
+      "max_tail_truncation_error": 1.8687062107380497e-10
+    },
+    {
+      "string": 4,
+      "accepted_audio": "Recordings/pilot/fit-v3.1/audio/s4_corrected.wav",
+      "audio_sha256": "7c04bce70045eeb45bd8828fcbab528e3100d78e0c924401626f9f8904e92d41",
+      "model_gain": 0.11069445234293299,
+      "residual_file": "s4-residual.f32",
+      "residual_sha256": "0a1b699eba5410e2476b0891bf282ac02c8c0b68ab62eca7423b630fbdb627d8",
+      "max_tail_truncation_error": 1.9309300307071376e-11
+    }
+  ]
+}

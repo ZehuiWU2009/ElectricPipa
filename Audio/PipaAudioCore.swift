@@ -75,7 +75,10 @@ private struct RollState {
 /// come due. No queue can overflow and no stroke is ever early or late.
 final class PipaAudioCore: @unchecked Sendable {
     let sampleRate: Double
-    let synth: PipaSynth
+    /// Whichever sound model this kernel was built with. The event queue, the
+    /// roll clock and the render loop are the same for both, so the choice is
+    /// made once, when the engine starts, and never inside a sample.
+    let synth: PipaSoundEngine
 
     // Bounded ring buffer for events. The capacity far exceeds the number of
     // events a single gesture can pile up.
@@ -92,9 +95,42 @@ final class PipaAudioCore: @unchecked Sendable {
     /// The sustained roll, if one is running. Render thread only.
     private var roll = RollState()
 
-    init(sampleRate: Double, bodySizeScale: Double = 1.0) {
+    /// Delayed strokes wait on the main queue before entering the ring buffer.
+    /// A generation stamp lets 止音 cancel strokes that were laid out earlier
+    /// by a tremolo or tan-tiao and have not reached the queue yet; without it
+    /// a hand that stops the sound would still hear the tail of a passage
+    /// arrive a moment later. Written on the main thread only.
+    private var scheduledGeneration: UInt64 = 0
+
+    /// Diagnosis only: peak absolute sample the synth produced since the last
+    /// probe read, and how many samples were non-zero. The render thread writes
+    /// these, the main thread reads and clears them; approximate values are
+    /// fine. Together they distinguish "the synth produced no audio" from
+    /// "audio was produced but never reached the speaker".
+    private var probePeak: Float = 0
+    private var probeNonzero: Int = 0
+    /// Gap between the last two .pluck events as the render thread saw them,
+    /// in milliseconds. This is the decisive probe: if the kernel is being fed
+    /// plucks every ~44 ms, repeat calls are getting past the main-thread
+    /// guard; if the gap is normal but the ear still hears a machine-gun run,
+    /// the repetition is happening below the event layer (buffer replay).
+    private var probePluckGapMs: Double = -1
+    private var lastPluckSample: Int64 = -1
+    /// How many .pluck events the render thread has actually applied. Compared
+    /// against the engine's own pluck count, it says whether an event reached
+    /// the synth at all or was lost between the UI and this loop.
+    private var appliedPlucks: Int = 0
+
+    /// The Karplus-Strong waveguide bank.
+    convenience init(sampleRate: Double, bodySizeScale: Double = 1.0) {
+        self.init(sampleRate: sampleRate,
+                  synth: PipaSynth(sampleRate: sampleRate, bodySizeScale: bodySizeScale))
+    }
+
+    /// Any other sound model, such as the measured one.
+    init(sampleRate: Double, synth: PipaSoundEngine) {
         self.sampleRate = sampleRate
-        self.synth = PipaSynth(sampleRate: sampleRate, bodySizeScale: bodySizeScale)
+        self.synth = synth
         self.eventQueue = ContiguousArray(repeating: ScheduledPipaEvent(dueSample: 0, event: .dampAll), count: queueCapacity)
     }
 
@@ -116,6 +152,18 @@ final class PipaAudioCore: @unchecked Sendable {
             guard abl[buf].mData != nil else { n = 0; break }
             let cap = Int(abl[buf].mDataByteSize) / MemoryLayout<Float>.stride
             n = min(n, cap)
+        }
+
+        // Clear every channel before rendering. If a buffer ever comes in short
+        // or nil, returning without writing leaves the previous block in place
+        // and CoreAudio replays it — heard as a short click once per buffer
+        // (2048 frames / 48 kHz ≈ 43 ms), the exact repeating pattern in the
+        // field recording. Zero first so a bad block is silence, never a replay.
+        for buf in 0..<abl.count {
+            if let p = abl[buf].mData?.assumingMemoryBound(to: Float.self) {
+                let cap = Int(abl[buf].mDataByteSize) / MemoryLayout<Float>.stride
+                p.update(repeating: 0, count: min(frames, cap))
+            }
         }
         guard n > 0 else { return }
 
@@ -140,11 +188,22 @@ final class PipaAudioCore: @unchecked Sendable {
                 throwRollStroke()
             }
 
-            let sample = synth.renderSample()
+            // The measured model is stereo: its partials carry a right-channel
+            // gain and phase. Channel 0 is left, channel 1 right, anything
+            // beyond repeats the right channel, and a mono output gets the sum
+            // of the two rather than dropping half the image.
+            let frame = synth.renderFrame()
+            // Diagnosis: track what the kernel actually produced this buffer.
+            let peak = max(abs(frame.left), abs(frame.right))
+            if peak > probePeak { probePeak = peak }
+            if peak > 1e-6 { probeNonzero += 1 }
+            let mono = (frame.left + frame.right) * 0.5
             for buf in 0..<abl.count {
                 if let pointer = abl[buf].mData?.assumingMemoryBound(to: Float.self) {
                     let cap = Int(abl[buf].mDataByteSize) / MemoryLayout<Float>.stride
-                    if i < cap { pointer[i] = sample }
+                    if i < cap {
+                        pointer[i] = abl.count == 1 ? mono : (buf == 0 ? frame.left : frame.right)
+                    }
                 }
             }
             rendered += 1
@@ -154,6 +213,12 @@ final class PipaAudioCore: @unchecked Sendable {
     private func apply(_ event: PipaEvent) {
         switch event {
         case .pluck(let string, let fret, let velocity, let position):
+            // Record how far apart two plucks reached the render thread.
+            if lastPluckSample >= 0, rendered > lastPluckSample {
+                probePluckGapMs = Double(rendered - lastPluckSample) / sampleRate * 1000
+            }
+            lastPluckSample = rendered
+            appliedPlucks += 1
             synth.pluck(string: string, fret: fret, velocity: velocity, position: position)
         case .bend(let string, let frequency):
             synth.bend(string: string, to: frequency)
@@ -219,6 +284,18 @@ final class PipaAudioCore: @unchecked Sendable {
 
     // MARK: - Main-thread interface
 
+    /// A read-only view of the queue for the diagnosis line in the console.
+    /// Main thread only; the counters are written on their own threads and are
+    /// intentionally not made atomic, since an approximate reading is plenty.
+    func diagnosticSnapshot() -> (pending: Int, rendered: Int64, peak: Float, nonzero: Int, pluckGapMs: Double, applied: Int, sounding: Int, synthPlucks: Int) {
+        let result = (enqueueIndex - dequeueIndex, rendered, probePeak, probeNonzero,
+                      probePluckGapMs, appliedPlucks, synth.diagnosticVoices, synth.diagnosticPluckCount)
+        probePeak = 0
+        probeNonzero = 0
+        probePluckGapMs = -1
+        return result
+    }
+
     private func enqueue(_ event: PipaEvent, at dueSample: Int64) {
         let prod = enqueueIndex
         let cons = dequeueIndex
@@ -231,9 +308,33 @@ final class PipaAudioCore: @unchecked Sendable {
         enqueueIndex = prod + 1
     }
 
+    /// Put an event on the render thread's queue.
+    ///
+    /// An event with a delay used to be enqueued immediately with a due time in
+    /// the future. The render loop consumes the ring buffer in strict FIFO
+    /// order and stops at the first event whose due time has not arrived, so
+    /// one future stroke blocked every pluck queued behind it. A tremolo laid
+    /// out 25 strokes over three seconds, for example, silenced every plain
+    /// pluck made during those three seconds, then fired all of the backlog at
+    /// once when the clock caught up — heard as a stuck note repeating in
+    /// short bursts, and "cured" by 止音 only because that drained the queue.
+    ///
+    /// The fix is to keep the queue made up of nothing but events that are due
+    /// now. A delayed event waits on the main queue and is enqueued when its
+    /// time comes, so a plain pluck never sits behind a stroke that has not
+    /// happened yet. Dispatch timing (about a millisecond) is ample next to a
+    /// 22 ms strum gap or a 100 ms wheel stroke, and the render loop stays
+    /// lock-free and allocation-free.
     fileprivate func schedule(_ event: PipaEvent, atOffset seconds: Double) {
-        let due = rendered + Int64(seconds * sampleRate)
-        enqueue(event, at: due)
+        guard seconds > 0 else {
+            enqueue(event, at: rendered)
+            return
+        }
+        let generation = scheduledGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self, self.scheduledGeneration == generation else { return }
+            self.enqueue(event, at: self.rendered)
+        }
     }
 
     func pluck(string: Int, fret: Int, velocity: Double = 0.85, position: Double = 0.5) {
@@ -319,6 +420,9 @@ final class PipaAudioCore: @unchecked Sendable {
     }
 
     func dampAll() {
+        // 止音也作废此前排布、尚未入队的延迟拨弦，否则停音之后
+        // 轮指剩下的那几下会过一会儿又冒出来。
+        scheduledGeneration &+= 1
         schedule(.dampAll, atOffset: 0)
     }
 }
